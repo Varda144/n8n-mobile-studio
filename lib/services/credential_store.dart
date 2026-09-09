@@ -25,7 +25,7 @@ class CredentialStore {
   }
 
   /// Store a credential with the given name and data
-  Future<void> store(String name, String type, Map<String, dynamic> data) async {
+  Future<void>   Future<void> store(String name, String type, Map<String, dynamic> data) async {
     await initialize();
     final encryptedData = _encrypt(jsonEncode(data));
     _credentials[name] = StoredCredential(
@@ -52,7 +52,7 @@ class CredentialStore {
   }
 
   /// Get all credentials (names and types only, no data)
-  List<Map<String, String>> getAll() async {
+  Future<List<Map<String, String>>> getAll() async {
     await initialize();
     return _credentials.values
         .map((c) => {'name': c.name, 'type': c.type})

@@ -76,7 +76,7 @@ class LocalWebhookServer {
     // Parse body
     Map<String, dynamic> body = {};
     try {
-      final bodyString = await request.transform(utf8.decoder).join();
+      final bodyString = await utf8.decoder.bind(request).join();
       if (bodyString.isNotEmpty) {
         body = jsonDecode(bodyString);
       }
@@ -125,13 +125,13 @@ class LocalWebhookServer {
     }
   }
 
-  void _sendResponse(HttpRequest request, int statusCode, Map<String, dynamic> data) {
+  Future<void> _sendResponse(HttpRequest request, int statusCode, Map<String, dynamic> data) async {
     request.response.statusCode = statusCode;
     request.response.headers.contentType = ContentType.json;
     request.response.headers.add('Access-Control-Allow-Origin', '*');
     request.response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     request.response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     request.response.write(jsonEncode(data));
-    request.response.close();
+    await request.response.close();
   }
 }
