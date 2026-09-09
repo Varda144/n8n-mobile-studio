@@ -17,7 +17,7 @@ class AboutPage extends StatelessWidget {
             Container(
               width: 100, height: 100,
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [AppTheme.primaryColor, AppTheme.primaryColor.withValues(alpha: 0.7)]),
+                gradient: LinearGradient(colors: [AppTheme.primaryColor, AppTheme.primaryColor.withOpacity(0.7)]),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: const Icon(Icons.electric_bolt, color: Colors.white, size: 50),

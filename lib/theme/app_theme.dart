@@ -59,9 +59,9 @@ class AppTheme {
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: const Color(0xFF0A0E1A),
         surfaceTintColor: Colors.transparent,
-        indicatorColor: primaryColor.withValues(alpha: 0.15),
+        indicatorColor: primaryColor.withOpacity(0.15),
         elevation: 8,
-        shadowColor: Colors.black.withValues(alpha: 0.5),
+        shadowColor: Colors.black.withOpacity(0.5),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.selected)) {
             return const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: primaryColor);
@@ -92,7 +92,7 @@ class AppTheme {
           backgroundColor: primaryColor,
           foregroundColor: const Color(0xFF0F172A),
           elevation: 0,
-          shadowColor: primaryColor.withValues(alpha: 0.4),
+          shadowColor: primaryColor.withOpacity(0.4),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
@@ -108,7 +108,7 @@ class AppTheme {
       ),
       chipTheme: ChipThemeData(
         backgroundColor: const Color(0xFF111827),
-        selectedColor: primaryColor.withValues(alpha: 0.2),
+        selectedColor: primaryColor.withOpacity(0.2),
         side: const BorderSide(color: border),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         labelStyle: const TextStyle(fontSize: 12),
@@ -120,7 +120,7 @@ class AppTheme {
           return const Color(0xFF475569);
         }),
         trackColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) return primaryColor.withValues(alpha: 0.3);
+          if (states.contains(WidgetState.selected)) return primaryColor.withOpacity(0.3);
           return const Color(0xFF1E293B);
         }),
       ),
@@ -215,7 +215,7 @@ class AppTheme {
   static List<BoxShadow> glowShadow(Color color, {double blur = 20, double spread = 0}) {
     return [
       BoxShadow(
-        color: color.withValues(alpha: 0.3),
+        color: color.withOpacity(0.3),
         blurRadius: blur,
         spreadRadius: spread,
       ),

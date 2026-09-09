@@ -66,7 +66,7 @@ class CredentialsPage extends StatelessWidget {
               leading: Container(
                 width: 40, height: 40,
                 decoration: BoxDecoration(
-                  color: _getTypeColor(cred.type).withValues(alpha: 0.15),
+                  color: _getTypeColor(cred.type).withOpacity(0.15),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(_getTypeIcon(cred.type), color: _getTypeColor(cred.type), size: 22),

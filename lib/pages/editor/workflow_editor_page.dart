@@ -211,9 +211,9 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
+        color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.95),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8)],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -247,9 +247,9 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
     return Container(
       width: 120, height: 100,
       decoration: BoxDecoration(
-        color: AppTheme.canvasBg.withValues(alpha: 0.9),
+        color: AppTheme.canvasBg.withOpacity(0.9),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppTheme.connectionColor.withValues(alpha: 0.5)),
+        border: Border.all(color: AppTheme.connectionColor.withOpacity(0.5)),
       ),
       child: CustomPaint(
         painter: _MinimapPainter(nodes: workflow.nodes, connections: workflow.connections),
@@ -261,9 +261,9 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
+        color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.95),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8)],
       ),
       child: TextField(
         decoration: InputDecoration(
@@ -336,7 +336,7 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
           Container(
             width: 40, height: 4,
             margin: const EdgeInsets.only(top: 12),
-            decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2)),
+            decoration: BoxDecoration(color: Colors.grey.withOpacity(0.3), borderRadius: BorderRadius.circular(2)),
           ),
           const Padding(
             padding: EdgeInsets.all(16),
@@ -350,7 +350,7 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
                 final nt = items[i];
                 return ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: nt.$4.withValues(alpha: 0.2),
+                    backgroundColor: nt.$4.withOpacity(0.2),
                     child: Icon(nt.$3, color: nt.$4, size: 22),
                   ),
                   title: Text(nt.$1, style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -373,9 +373,9 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
       width: 260,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
+        color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.95),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12)],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 12)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -557,7 +557,7 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
           Container(
             width: 40, height: 4,
             margin: const EdgeInsets.only(top: 12),
-            decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2)),
+            decoration: BoxDecoration(color: Colors.grey.withOpacity(0.3), borderRadius: BorderRadius.circular(2)),
           ),
           const Padding(
             padding: EdgeInsets.all(16),
@@ -577,9 +577,9 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
                   },
                   child: Container(
                     decoration: BoxDecoration(
-                      color: nt.$4.withValues(alpha: 0.15),
+                      color: nt.$4.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: nt.$4.withValues(alpha: 0.3)),
+                      border: Border.all(color: nt.$4.withOpacity(0.3)),
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -689,7 +689,7 @@ class _WorkflowCanvasPainter extends CustomPainter {
     canvas.scale(scale);
 
     // Draw grid
-    final gridPaint = Paint()..color = AppTheme.connectionColor.withValues(alpha: 0.1)..strokeWidth = 0.5;
+    final gridPaint = Paint()..color = AppTheme.connectionColor.withOpacity(0.1)..strokeWidth = 0.5;
     for (double x = -2000; x < 4000; x += 40) {
       canvas.drawLine(Offset(x, -2000), Offset(x, 4000), gridPaint);
     }
@@ -735,11 +735,11 @@ class _WorkflowCanvasPainter extends CustomPainter {
       );
 
       // Shadow
-      final shadowPaint = Paint()..color = Colors.black.withValues(alpha: 0.3)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+      final shadowPaint = Paint()..color = Colors.black.withOpacity(0.3)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
       canvas.drawRRect(nodeRect.shift(const Offset(3, 3)), shadowPaint);
 
       // Node background
-      final nodePaint = Paint()..color = isSelected ? AppTheme.primaryColor.withValues(alpha: 0.3) : AppTheme.nodeBg;
+      final nodePaint = Paint()..color = isSelected ? AppTheme.primaryColor.withOpacity(0.3) : AppTheme.nodeBg;
       canvas.drawRRect(nodeRect, nodePaint);
 
       // Border

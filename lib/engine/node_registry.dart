@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'workflow_data.dart';
 import 'expression_engine.dart';
 
@@ -388,15 +389,9 @@ class CodeNode extends NodeExecutor {
     } else {
       final itemsJson = context.inputData.map((d) => d.json).toList();
       final output = _executeCodeForAll(code, itemsJson, context);
-      if (output is List) {
-        for (final item in output) {
-          results.add(NodeExecutionData(
-              json: item is Map ? Map<String, dynamic>.from(item) : {'value': item}));
-        }
-      } else if (output is Map) {
-        results.add(NodeExecutionData(json: Map<String, dynamic>.from(output)));
-      } else {
-        results.add(NodeExecutionData(json: {'result': output}));
+      for (final item in output) {
+        results.add(NodeExecutionData(
+            json: item is Map ? Map<String, dynamic>.from(item) : {'value': item}));
       }
     }
 
@@ -471,7 +466,7 @@ class CodeNode extends NodeExecutor {
     if (expr.contains('.split(')) {
       final field = expr.split('.split')[0].split('.').last.trim();
       final val = (item[field] ?? '').toString();
-      final delimiter = RegExp(r"['\"](.+?)['\"]").firstMatch(expr)?.group(1) ?? ',';
+      final delimiter = RegExp(r"""['"](.+?)['"]""").firstMatch(expr)?.group(1) ?? ',';
       return val.split(delimiter);
     }
     return item;

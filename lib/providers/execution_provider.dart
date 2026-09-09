@@ -8,8 +8,8 @@ class ExecutionProvider extends ChangeNotifier {
   final List<Execution> _executions = [];
   List<Execution> get executions => List.unmodifiable(_executions);
   ExecutionEngine? _engine;
-  WorkflowExecutionResult? _lastResult;
-  WorkflowExecutionResult? get lastResult => _lastResult;
+  engine.WorkflowExecutionResult? _lastResult;
+  engine.WorkflowExecutionResult? get lastResult => _lastResult;
 
   // Live execution state
   String? _currentExecutingNode;
@@ -78,14 +78,14 @@ class ExecutionProvider extends ChangeNotifier {
   }
 
   /// Execute a workflow using the real execution engine
-  Future<WorkflowExecutionResult> executeWorkflow(Workflow workflow) async {
+  Future<engine.WorkflowExecutionResult> executeWorkflow(Workflow workflow) async {
     _isExecuting = true;
     _currentStep = 0;
     _currentStepTotal = 0;
     notifyListeners();
 
     // Convert workflow model to engine definition
-    final definition = engine.WorkflowConverter.fromModels(
+    final definition = WorkflowConverter.fromModels(
       workflow.id,
       workflow.name,
       workflow.nodes,

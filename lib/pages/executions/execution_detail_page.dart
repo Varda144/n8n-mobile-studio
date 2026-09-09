@@ -35,9 +35,9 @@ class ExecutionDetailPage extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.1),
+                color: color.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: color.withValues(alpha: 0.3)),
+                border: Border.all(color: color.withOpacity(0.3)),
               ),
               child: Row(
                 children: [
@@ -105,13 +105,13 @@ class ExecutionDetailPage extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.surface,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Row(
         children: [
           Container(
             width: 28, height: 28,
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.2), shape: BoxShape.circle),
+            decoration: BoxDecoration(color: color.withOpacity(0.2), shape: BoxShape.circle),
             child: Center(
               child: step.status.name == 'success'
                   ? const Icon(Icons.check, size: 14, color: AppTheme.successColor)

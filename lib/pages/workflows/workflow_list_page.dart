@@ -105,7 +105,7 @@ class _WorkflowListPageState extends State<WorkflowListPage> {
                   Container(
                     width: 40, height: 40,
                     decoration: BoxDecoration(
-                      color: isActive ? AppTheme.successColor.withValues(alpha: 0.2) : Colors.grey.withValues(alpha: 0.2),
+                      color: isActive ? AppTheme.successColor.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Icon(Icons.account_tree,
@@ -170,7 +170,7 @@ class _WorkflowListPageState extends State<WorkflowListPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
+        color: color.withOpacity(0.15),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(label, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),

@@ -11,15 +11,13 @@ typedef ProgressCallback = void Function(String nodeName, ExecutionStatus status
 
 /// The core execution engine - implements n8n's stack-based graph traversal
 class ExecutionEngine {
-  final NodeRegistry _nodeRegistry;
   final Map<String, dynamic> _environment;
   ProgressCallback? _onProgress;
 
   ExecutionEngine({
     Map<String, dynamic> environment = const {},
-  })  : _nodeRegistry = NodeRegistry(),
-        _environment = environment {
-    _nodeRegistry.initialize();
+  })  : _environment = environment {
+    NodeRegistry.initialize();
   }
 
   set onProgress(ProgressCallback? callback) => _onProgress = callback;
@@ -86,7 +84,7 @@ class ExecutionEngine {
         );
 
         // Get node executor
-        final executor = _nodeRegistry.get(nodeDef.type);
+        final executor = NodeRegistry.get(nodeDef.type);
         if (executor == null) {
           // Unknown node type - pass through
           nodeResults[nodeName] = inputItems;
@@ -265,11 +263,11 @@ class ExecutionEngine {
   }
 
   /// List all available node types
-  List<String> getAvailableNodeTypes() => _nodeRegistry.registeredTypes;
+  List<String> getAvailableNodeTypes() => NodeRegistry.registeredTypes;
 
   /// Get description for a node type
   String? getNodeDescription(String type) =>
-      _nodeRegistry.get(type)?.description;
+      NodeRegistry.get(type)?.description;
 }
 
 /// Helper to convert our workflow model to WorkflowDefinition

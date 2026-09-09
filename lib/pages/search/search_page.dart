@@ -92,7 +92,7 @@ class _SearchPageState extends State<SearchPage> {
   Widget _buildQuickAction(String label, IconData icon, String route) {
     return ListTile(
       leading: CircleAvatar(
-        backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.15),
+        backgroundColor: AppTheme.primaryColor.withOpacity(0.15),
         child: Icon(icon, color: AppTheme.primaryColor, size: 20),
       ),
       title: Text(label),
@@ -114,7 +114,7 @@ class _SearchPageState extends State<SearchPage> {
           margin: const EdgeInsets.only(bottom: 8),
           child: ListTile(
             leading: CircleAvatar(
-              backgroundColor: AppTheme.primaryColor.withValues(alpha: 0.15),
+              backgroundColor: AppTheme.primaryColor.withOpacity(0.15),
               child: const Icon(Icons.account_tree, color: AppTheme.primaryColor, size: 20),
             ),
             title: Text(item.title, style: const TextStyle(fontWeight: FontWeight.w600)),

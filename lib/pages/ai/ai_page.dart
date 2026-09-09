@@ -50,7 +50,7 @@ class _AiPageState extends State<AiPage> {
                       margin: const EdgeInsets.symmetric(horizontal: 3),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
-                        color: selected ? a.$4.withValues(alpha: 0.2) : AppTheme.surface,
+                        color: selected ? a.$4.withOpacity(0.2) : AppTheme.surface,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
                           color: selected ? a.$4 : Colors.transparent,
@@ -105,7 +105,7 @@ class _AiPageState extends State<AiPage> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(_getActionIcon(), size: 64, color: _getActionColor().withValues(alpha: 0.3)),
+                        Icon(_getActionIcon(), size: 64, color: _getActionColor().withOpacity(0.3)),
                         const SizedBox(height: 16),
                         Text(_getActionLabel(), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
@@ -123,7 +123,7 @@ class _AiPageState extends State<AiPage> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Theme.of(context).scaffoldBackgroundColor,
-              border: Border(top: BorderSide(color: Colors.grey.withValues(alpha: 0.2))),
+              border: Border(top: BorderSide(color: Colors.grey.withOpacity(0.2))),
             ),
             child: Row(
               children: [

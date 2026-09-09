@@ -148,11 +148,9 @@ class ExpressionEngine {
   /// Evaluate a condition expression
   static bool evaluateCondition(String condition, Map<String, dynamic> context) {
     final resolved = resolve(condition, context);
-    if (resolved is bool) return resolved;
-    if (resolved is String) {
-      return resolved.toLowerCase() == 'true' || resolved == '1';
-    }
-    if (resolved is num) return resolved != 0;
-    return resolved != null;
+    final lower = resolved.toLowerCase();
+    if (lower == 'true' || lower == '1') return true;
+    if (lower == 'false' || lower == '0' || resolved.isEmpty) return false;
+    return resolved.isNotEmpty;
   }
 }

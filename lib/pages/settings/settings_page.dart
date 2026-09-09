@@ -196,7 +196,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return ListTile(
       leading: Container(
         width: 36, height: 36,
-        decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
         child: Icon(icon, color: color, size: 20),
       ),
       title: Text(title, style: const TextStyle(fontSize: 14)),
@@ -215,7 +215,7 @@ class _SettingsPageState extends State<SettingsPage> {
     return ListTile(
       leading: Container(
         width: 36, height: 36,
-        decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
         child: Icon(icon, color: color, size: 20),
       ),
       title: Text(title, style: const TextStyle(fontSize: 14)),
