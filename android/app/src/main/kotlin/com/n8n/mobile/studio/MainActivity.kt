@@ -1,16 +1,14 @@
 package com.n8n.mobile.studio
 
-import android.os.Build
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
 
     private val CHANNEL = "com.n8n.mobile.studio/biometric"
     private var pendingResult: MethodChannel.Result? = null
@@ -57,7 +55,7 @@ class MainActivity : FlutterActivity() {
 
         val executor = ContextCompat.getMainExecutor(this)
 
-        val biometricPrompt = BiometricPrompt(activity, executor, object : BiometricPrompt.AuthenticationCallback() {
+        val callback = object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(resultAuth: BiometricPrompt.AuthenticationResult) {
                 super.onAuthenticationSucceeded(resultAuth)
                 pendingResult?.reply(mapOf("success" to true))
@@ -79,10 +77,10 @@ class MainActivity : FlutterActivity() {
 
             override fun onAuthenticationFailed() {
                 super.onAuthenticationFailed()
-                // Called when a biometric is recognized but doesn't match.
-                // Don't resolve yet — wait for onAuthenticationError or onAuthenticationSucceeded.
             }
-        })
+        }
+
+        val biometricPrompt = BiometricPrompt(activity, executor, callback)
 
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
