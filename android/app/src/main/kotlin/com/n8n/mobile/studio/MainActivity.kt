@@ -3,7 +3,6 @@ package com.n8n.mobile.studio
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
-import androidx.fragment.app.FragmentActivity
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -33,10 +32,11 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun checkBiometricAvailable(): Boolean {
         val biometricManager = BiometricManager.from(this)
-        return when (biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK)) {
-            BiometricManager.BIOMETRIC_SUCCESS -> true
-            else -> false
-        }
+        val result = biometricManager.canAuthenticate(
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or 
+            BiometricManager.Authenticators.BIOMETRIC_WEAK
+        )
+        return result == BiometricManager.BIOMETRIC_SUCCESS
     }
 
     private fun showBiometricPrompt(title: String, subtitle: String, result: MethodChannel.Result) {
@@ -45,33 +45,35 @@ class MainActivity : FlutterFragmentActivity() {
             return
         }
 
-        val activity = activity
-        if (activity !is FragmentActivity) {
-            result.error("INVALID_ACTIVITY", "Activity is not a FragmentActivity", null)
+        val currentActivity = activity
+        if (currentActivity == null) {
+            result.error("NO_ACTIVITY", "No activity available", null)
             return
         }
 
         pendingResult = result
-
         val executor = ContextCompat.getMainExecutor(this)
 
         val callback = object : BiometricPrompt.AuthenticationCallback() {
-            override fun onAuthenticationSucceeded(resultAuth: BiometricPrompt.AuthenticationResult) {
-                super.onAuthenticationSucceeded(resultAuth)
-                pendingResult?.reply(mapOf("success" to true))
+            override fun onAuthenticationSucceeded(authResult: BiometricPrompt.AuthenticationResult) {
+                super.onAuthenticationSucceeded(authResult)
+                pendingResult?.success(mapOf("success" to true))
                 pendingResult = null
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 super.onAuthenticationError(errorCode, errString)
-                val error = when (errorCode) {
+                val errorType = when (errorCode) {
                     BiometricPrompt.ERROR_USER_CANCELED,
-                    BiometricPrompt.ERROR_NEGATIVE_BUTTON -> "user_cancel"
+                    BiometricPrompt.ERROR_NEGATIVE_BUTTON,
+                    BiometricPrompt.ERROR_CANCELED -> "user_cancel"
                     BiometricPrompt.ERROR_NO_BIOMETRICS,
-                    BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL -> "not_enrolled"
+                    BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL,
+                    BiometricPrompt.ERROR_HW_NOT_PRESENT,
+                    BiometricPrompt.ERROR_HW_UNAVAILABLE -> "not_enrolled"
                     else -> "unknown"
                 }
-                pendingResult?.reply(mapOf("success" to false, "error" to error))
+                pendingResult?.success(mapOf("success" to false, "error" to errorType))
                 pendingResult = null
             }
 
@@ -80,15 +82,17 @@ class MainActivity : FlutterFragmentActivity() {
             }
         }
 
-        val biometricPrompt = BiometricPrompt(activity, executor, callback)
-
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
             .setTitle(title)
             .setSubtitle(subtitle)
-            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK)
+            .setAllowedAuthenticators(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or 
+                BiometricManager.Authenticators.BIOMETRIC_WEAK
+            )
             .setNegativeButtonText("Use PIN")
             .build()
 
+        val biometricPrompt = BiometricPrompt(currentActivity as androidx.fragment.app.FragmentActivity, executor, callback)
         biometricPrompt.authenticate(promptInfo)
     }
 }
