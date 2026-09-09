@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/workflow_provider.dart';
+import '../../providers/execution_provider.dart';
 import '../../models/workflow_model.dart';
+import '../../engine/workflow_data.dart' as engine;
 
 class WorkflowEditorPage extends StatefulWidget {
   final String workflowId;
@@ -74,6 +76,11 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.check_circle_outline),
             onPressed: _validate,
+          ),
+          IconButton(
+            icon: const Icon(Icons.play_arrow, color: AppTheme.primaryColor),
+            onPressed: () => _executeWorkflow(workflow),
+            tooltip: 'Execute Workflow',
           ),
           PopupMenuButton(
             itemBuilder: (_) => [
@@ -171,12 +178,101 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
               right: 12, bottom: 80,
               child: _buildNodeConfig(workflow),
             ),
+          // Live execution overlay
+          Consumer<ExecutionProvider>(
+            builder: (ctx, exec, _) {
+              if (!exec.isExecuting) return const SizedBox.shrink();
+              return Positioned(
+                bottom: 100,
+                left: 16,
+                right: 16,
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppTheme.primaryColor, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.primaryColor.withOpacity(0.3),
+                        blurRadius: 20,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: AppTheme.primaryColor,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Executing Workflow...',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                if (exec.currentExecutingNode != null)
+                                  Text(
+                                    'Node: ${exec.currentExecutingNode}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            '${exec.currentStep}/${exec.currentStepTotal}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.primaryColor,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: exec.currentStepTotal > 0
+                              ? exec.currentStep / exec.currentStepTotal
+                              : 0,
+                          minHeight: 6,
+                          backgroundColor: Colors.grey.withOpacity(0.2),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            AppTheme.primaryColor,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _addNode(workflow),
         backgroundColor: AppTheme.primaryColor,
-        child: const Icon(Icons.add, color: Colors.white),
+        icon: const Icon(Icons.add, color: Colors.white),
+        label: const Text('Add Node', style: TextStyle(color: Colors.white)),
       ),
     );
   }
@@ -647,12 +743,7 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
   void _handleMenuAction(String action, Workflow workflow) {
     switch (action) {
       case 'execute':
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Executing "${workflow.name}"...'),
-            backgroundColor: AppTheme.infoColor,
-          ),
-        );
+        _executeWorkflow(workflow);
         break;
       case 'export':
         ScaffoldMessenger.of(context).showSnackBar(
@@ -663,6 +754,43 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
         context.read<WorkflowProvider>().duplicateWorkflow(workflow.id);
         context.pop();
         break;
+    }
+  }
+
+  void _executeWorkflow(Workflow workflow) async {
+    final exec = context.read<ExecutionProvider>();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Executing "${workflow.name}"...'),
+        backgroundColor: AppTheme.infoColor,
+      ),
+    );
+    try {
+      final result = await exec.executeWorkflow(workflow);
+      if (!mounted) return;
+      if (result.status == engine.ExecutionStatus.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Workflow completed in ${result.totalDurationMs}ms'),
+            backgroundColor: AppTheme.successColor,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Workflow failed: ${result.error}'),
+            backgroundColor: AppTheme.errorColor,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
     }
   }
 }

@@ -3,6 +3,8 @@ import '../models/workflow_model.dart';
 import '../models/execution_model.dart';
 import '../engine/execution_engine.dart';
 import '../engine/workflow_data.dart' as engine;
+import '../services/webhook_server.dart';
+import '../services/cron_scheduler.dart';
 
 class ExecutionProvider extends ChangeNotifier {
   final List<Execution> _executions = [];
@@ -23,10 +25,99 @@ class ExecutionProvider extends ChangeNotifier {
   bool _isExecuting = false;
   bool get isExecuting => _isExecuting;
 
+  // Services
+  final LocalWebhookServer _webhookServer = LocalWebhookServer();
+  final CronScheduler _scheduler = CronScheduler();
+
   ExecutionProvider() {
     _engine = ExecutionEngine();
     _engine!.onProgress = _onNodeProgress;
+    _webhookServer.onWebhookReceived = _onWebhookReceived;
+    _scheduler.onTrigger = _onCronTrigger;
     _seedData();
+  }
+
+  void _onWebhookReceived(String path, Map<String, dynamic> data, Map<String, String> headers) {
+    debugPrint('Webhook received at $path: $data');
+    // Find workflow registered for this path and execute it
+    final webhooks = _webhookServer.getRegisteredWebhooks();
+    for (final wh in webhooks) {
+      if (wh['path'] == path) {
+        final workflowId = wh['workflowId'];
+        if (workflowId != null) {
+          // Execute the workflow with webhook data
+          _executeWebhookWorkflow(workflowId, data);
+        }
+      }
+    }
+  }
+
+  void _onCronTrigger(String workflowId) {
+    debugPrint('Cron triggered for workflow: $workflowId');
+    // Find the workflow and execute it
+    // This would need access to the workflow provider
+  }
+
+  Future<void> _executeWebhookWorkflow(String workflowId, Map<String, dynamic> data) async {
+    // This would execute the workflow with the webhook data
+    debugPrint('Executing webhook workflow $workflowId with data: $data');
+  }
+
+  /// Start the webhook server
+  Future<void> startWebhookServer({int port = 8080}) async {
+    await _webhookServer.start(port: port);
+    notifyListeners();
+  }
+
+  /// Stop the webhook server
+  Future<void> stopWebhookServer() async {
+    await _webhookServer.stop();
+    notifyListeners();
+  }
+
+  /// Register a webhook for a workflow
+  void registerWebhook(String path, String workflowId) {
+    _webhookServer.registerWebhook(path, workflowId);
+    notifyListeners();
+  }
+
+  /// Unregister a webhook
+  void unregisterWebhook(String path) {
+    _webhookServer.unregisterWebhook(path);
+    notifyListeners();
+  }
+
+  /// Get all registered webhooks
+  List<Map<String, String>> getRegisteredWebhooks() {
+    return _webhookServer.getRegisteredWebhooks();
+  }
+
+  /// Get webhook URL
+  String getWebhookUrl(String path) {
+    return _webhookServer.getWebhookUrl(path);
+  }
+
+  /// Check if webhook server is running
+  bool get isWebhookServerRunning => _webhookServer.isRunning;
+
+  /// Get webhook server port
+  int get webhookServerPort => _webhookServer.port;
+
+  /// Schedule a workflow with cron
+  void scheduleWorkflow(String cronExpr, String workflowId) {
+    _scheduler.schedule(cronExpr, workflowId);
+    notifyListeners();
+  }
+
+  /// Unschedule a workflow
+  void unscheduleWorkflow(String cronExpr) {
+    _scheduler.unschedule(cronExpr);
+    notifyListeners();
+  }
+
+  /// Get all scheduled workflows
+  List<Map<String, String>> getScheduledWorkflows() {
+    return _scheduler.getScheduledWorkflows();
   }
 
   void _seedData() {

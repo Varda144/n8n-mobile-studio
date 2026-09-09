@@ -12,9 +12,12 @@ import 'providers/search_provider.dart';
 import 'providers/ai_provider.dart';
 import 'providers/mcp_provider.dart';
 import 'providers/instance_provider.dart';
+import 'services/credential_store.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Initialize credential store
+  CredentialStore().initialize();
   runApp(const N8nMobileStudio());
 }
 

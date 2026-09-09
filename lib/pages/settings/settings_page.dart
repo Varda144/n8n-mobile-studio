@@ -28,13 +28,13 @@ class _SettingsPageState extends State<SettingsPage> {
         subtitle: 'Verify to enable biometric protection',
       );
       if (!mounted) return;
-      if (result == BiometricResult.success) {
+      if (result.success) {
         settings.toggleBiometric();
-      } else if (result == BiometricResult.notEnrolled) {
+      } else if (result.error == 'not_enrolled') {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No biometrics enrolled. Set up fingerprint or face in device settings.')),
         );
-      } else if (result == BiometricResult.cancelled) {
+      } else if (result.cancelled) {
         // User cancelled — stay off
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
