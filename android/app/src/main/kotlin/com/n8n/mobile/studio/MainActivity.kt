@@ -18,7 +18,7 @@ class MainActivity : FlutterFragmentActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "isBiometricAvailable" -> {
-                    result.reply(checkBiometricAvailable())
+                    result.success(checkBiometricAvailable())
                 }
                 "authenticate" -> {
                     val title = call.argument<String>("title") ?: "Authenticate"
@@ -32,11 +32,11 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun checkBiometricAvailable(): Boolean {
         val biometricManager = BiometricManager.from(this)
-        val result = biometricManager.canAuthenticate(
+        val authResult = biometricManager.canAuthenticate(
             BiometricManager.Authenticators.BIOMETRIC_STRONG or 
             BiometricManager.Authenticators.BIOMETRIC_WEAK
         )
-        return result == BiometricManager.BIOMETRIC_SUCCESS
+        return authResult == BiometricManager.BIOMETRIC_SUCCESS
     }
 
     private fun showBiometricPrompt(title: String, subtitle: String, result: MethodChannel.Result) {
@@ -57,8 +57,9 @@ class MainActivity : FlutterFragmentActivity() {
         val callback = object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(authResult: BiometricPrompt.AuthenticationResult) {
                 super.onAuthenticationSucceeded(authResult)
-                pendingResult?.success(mapOf("success" to true))
+                val res = pendingResult
                 pendingResult = null
+                res?.success(mapOf("success" to true))
             }
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
@@ -73,8 +74,9 @@ class MainActivity : FlutterFragmentActivity() {
                     BiometricPrompt.ERROR_HW_UNAVAILABLE -> "not_enrolled"
                     else -> "unknown"
                 }
-                pendingResult?.success(mapOf("success" to false, "error" to errorType))
+                val res = pendingResult
                 pendingResult = null
+                res?.success(mapOf("success" to false, "error" to errorType))
             }
 
             override fun onAuthenticationFailed() {
@@ -92,7 +94,13 @@ class MainActivity : FlutterFragmentActivity() {
             .setNegativeButtonText("Use PIN")
             .build()
 
-        val biometricPrompt = BiometricPrompt(currentActivity as androidx.fragment.app.FragmentActivity, executor, callback)
+        val fragmentActivity = currentActivity as? androidx.fragment.app.FragmentActivity
+        if (fragmentActivity == null) {
+            result.error("INVALID_ACTIVITY", "Activity is not FragmentActivity", null)
+            return
+        }
+
+        val biometricPrompt = BiometricPrompt(fragmentActivity, executor, callback)
         biometricPrompt.authenticate(promptInfo)
     }
 }
