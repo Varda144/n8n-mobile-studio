@@ -62,7 +62,7 @@ class McpPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text('Model Context Protocol', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                        Text('${provider.servers.where((s) => s.connected).length} servers connected', style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12)),
+                        Text('${provider.servers.where((s) => s.connected).length} servers connected', style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12)),
                       ],
                     ),
                   ),
@@ -78,7 +78,7 @@ class McpPage extends StatelessWidget {
                 leading: Container(
                   width: 40, height: 40,
                   decoration: BoxDecoration(
-                    color: (server.connected ? AppTheme.successColor : Colors.grey).withOpacity(0.15),
+                    color: (server.connected ? AppTheme.successColor : Colors.grey).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(Icons.dns, color: server.connected ? AppTheme.successColor : Colors.grey, size: 22),
@@ -91,7 +91,7 @@ class McpPage extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: (server.connected ? AppTheme.successColor : Colors.grey).withOpacity(0.15),
+                        color: (server.connected ? AppTheme.successColor : Colors.grey).withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(server.connected ? 'Connected' : 'Disconnected',
@@ -115,7 +115,7 @@ class McpPage extends StatelessWidget {
                 leading: Container(
                   width: 36, height: 36,
                   decoration: BoxDecoration(
-                    color: AppTheme.primaryColor.withOpacity(0.15),
+                    color: AppTheme.primaryColor.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(Icons.code, color: AppTheme.primaryColor, size: 18),

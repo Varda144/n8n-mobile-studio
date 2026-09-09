@@ -105,7 +105,7 @@ class _WorkflowCreatePageState extends State<WorkflowCreatePage> {
         decoration: BoxDecoration(
           color: selected ? AppTheme.primaryColor : Theme.of(context).cardTheme.color,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: selected ? AppTheme.primaryColor : Colors.grey.withOpacity(0.3)),
+          border: Border.all(color: selected ? AppTheme.primaryColor : Colors.grey.withValues(alpha: 0.3)),
         ),
         child: Center(
           child: Text(label, style: TextStyle(

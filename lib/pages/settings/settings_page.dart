@@ -2,9 +2,50 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/settings_provider.dart';
+import '../../services/biometric_service.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  Future<void> _onBiometricToggle(bool currentVal, SettingsProvider settings) async {
+    if (!currentVal) {
+      // Turning ON — verify biometric works first
+      final available = await BiometricService.isAvailable();
+      if (!available) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Biometric not available on this device')),
+        );
+        return;
+      }
+      final result = await BiometricService.authenticate(
+        title: 'Enable Biometric Lock',
+        subtitle: 'Verify to enable biometric protection',
+      );
+      if (!mounted) return;
+      if (result == BiometricResult.success) {
+        settings.toggleBiometric();
+      } else if (result == BiometricResult.notEnrolled) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No biometrics enrolled. Set up fingerprint or face in device settings.')),
+        );
+      } else if (result == BiometricResult.cancelled) {
+        // User cancelled — stay off
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Biometric authentication failed')),
+        );
+      }
+    } else {
+      // Turning OFF — just toggle
+      settings.toggleBiometric();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +110,7 @@ class SettingsPage extends StatelessWidget {
               title: 'Biometric Lock',
               subtitle: 'Require biometric to open app',
               value: settings.biometricLock,
-              onChanged: (_) => settings.toggleBiometric(),
+              onChanged: (val) => _onBiometricToggle(settings.biometricLock, settings),
               color: Colors.red,
             ),
             _buildNavTile(
@@ -155,7 +196,7 @@ class SettingsPage extends StatelessWidget {
     return ListTile(
       leading: Container(
         width: 36, height: 36,
-        decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
         child: Icon(icon, color: color, size: 20),
       ),
       title: Text(title, style: const TextStyle(fontSize: 14)),
@@ -174,7 +215,7 @@ class SettingsPage extends StatelessWidget {
     return ListTile(
       leading: Container(
         width: 36, height: 36,
-        decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
         child: Icon(icon, color: color, size: 20),
       ),
       title: Text(title, style: const TextStyle(fontSize: 14)),

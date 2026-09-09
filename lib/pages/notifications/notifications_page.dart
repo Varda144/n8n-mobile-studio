@@ -33,12 +33,12 @@ class NotificationsPage extends StatelessWidget {
                     : AppTheme.infoColor;
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
-                  color: notif.read ? null : color.withOpacity(0.05),
+                  color: notif.read ? null : color.withValues(alpha: 0.05),
                   child: ListTile(
                     leading: Container(
                       width: 40, height: 40,
                       decoration: BoxDecoration(
-                        color: color.withOpacity(0.15),
+                        color: color.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(_getIcon(notif.type), color: color, size: 20),

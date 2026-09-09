@@ -63,7 +63,7 @@ class WebhooksPage extends StatelessWidget {
                       Container(
                         width: 40, height: 40,
                         decoration: BoxDecoration(
-                          color: (wh.$3 ? AppTheme.successColor : Colors.grey).withOpacity(0.15),
+                          color: (wh.$3 ? AppTheme.successColor : Colors.grey).withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(Icons.webhook, color: wh.$3 ? AppTheme.successColor : Colors.grey, size: 22),

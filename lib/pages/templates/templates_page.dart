@@ -62,7 +62,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
                             Container(
                               width: 40, height: 40,
                               decoration: BoxDecoration(
-                                color: AppTheme.primaryColor.withOpacity(0.15),
+                                color: AppTheme.primaryColor.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: const Icon(Icons.dashboard_customize, color: AppTheme.primaryColor, size: 22),
@@ -116,7 +116,7 @@ class _TemplatesPageState extends State<TemplatesPage> {
   Widget _buildBadge(String text, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(6)),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
       child: Text(text, style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600)),
     );
   }

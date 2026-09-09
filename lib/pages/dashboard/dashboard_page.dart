@@ -63,7 +63,7 @@ class DashboardPage extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [AppTheme.primaryColor, AppTheme.primaryColor.withOpacity(0.7)]),
+        gradient: LinearGradient(colors: [AppTheme.primaryColor, AppTheme.primaryColor.withValues(alpha: 0.7)]),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
@@ -77,11 +77,11 @@ class DashboardPage extends StatelessWidget {
                 Text(instances.activeInstance?.name ?? 'No Instance',
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                 Text(instances.activeInstance?.url ?? '',
-                    style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 12)),
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12)),
               ],
             ),
           ),
-          Icon(Icons.arrow_forward_ios, color: Colors.white.withOpacity(0.7), size: 16),
+          Icon(Icons.arrow_forward_ios, color: Colors.white.withValues(alpha: 0.7), size: 16),
         ],
       ),
     );
@@ -108,7 +108,7 @@ class DashboardPage extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppTheme.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
         child: Column(
           children: [
@@ -138,7 +138,7 @@ class DashboardPage extends StatelessWidget {
               margin: const EdgeInsets.symmetric(horizontal: 4),
               padding: const EdgeInsets.symmetric(vertical: 16),
               decoration: BoxDecoration(
-                color: a.$4.withOpacity(0.15),
+                color: a.$4.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -188,7 +188,7 @@ class DashboardPage extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: CircleAvatar(backgroundColor: color.withOpacity(0.2), child: Icon(
+        leading: CircleAvatar(backgroundColor: color.withValues(alpha: 0.2), child: Icon(
           exec.status.name == 'success' ? Icons.check : exec.status.name == 'error' ? Icons.close : Icons.play_arrow,
           color: color, size: 20,
         )),

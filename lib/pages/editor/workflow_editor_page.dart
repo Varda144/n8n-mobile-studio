@@ -19,11 +19,33 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
   Offset _lastFocalPoint = Offset.zero;
   WorkflowNode? _selectedNode;
   WorkflowNode? _dragNode;
+  Offset _dragStartCanvasPos = Offset.zero;
+  Offset _dragNodeStartPos = Offset.zero;
   bool _showMinimap = true;
   String _searchNode = '';
   final List<String> _undoStack = [];
   final List<String> _redoStack = [];
   bool _validating = false;
+  bool _isPanning = false;
+  final GlobalKey _canvasKey = GlobalKey();
+
+  Offset _screenToCanvas(Offset screenPos) {
+    return (screenPos - _offset) / _scale;
+  }
+
+  WorkflowNode? _hitTestNode(Offset canvasPos) {
+    final provider = context.read<WorkflowProvider>();
+    final workflow = provider.getById(widget.workflowId);
+    if (workflow == null) return null;
+
+    for (var node in workflow.nodes) {
+      final rect = Rect.fromLTWH(node.x, node.y, 160, 60);
+      if (rect.contains(canvasPos)) {
+        return node;
+      }
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -65,26 +87,70 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
       ),
       body: Stack(
         children: [
-          GestureDetector(
-            onScaleStart: (details) {
-              _lastFocalPoint = details.focalPoint;
-            },
-            onScaleUpdate: (details) {
-              setState(() {
-                _offset += details.focalPoint - _lastFocalPoint;
+          Positioned.fill(
+            child: GestureDetector(
+              key: _canvasKey,
+              onScaleStart: (details) {
                 _lastFocalPoint = details.focalPoint;
-                _scale = (_scale * details.scale).clamp(0.3, 3.0);
-              });
-            },
-            child: CustomPaint(
-              painter: _WorkflowCanvasPainter(
-                nodes: workflow.nodes,
-                connections: workflow.connections,
-                scale: _scale,
-                offset: _offset,
-                selectedNode: _selectedNode,
+
+                if (details.pointerCount == 1) {
+                  final box = _canvasKey.currentContext?.findRenderObject() as RenderBox?;
+                  if (box != null) {
+                    final localPos = box.globalToLocal(details.focalPoint);
+                    final canvasPos = _screenToCanvas(localPos);
+                    final hitNode = _hitTestNode(canvasPos);
+                    if (hitNode != null) {
+                      _dragNode = hitNode;
+                      _dragStartCanvasPos = canvasPos;
+                      _dragNodeStartPos = Offset(hitNode.x, hitNode.y);
+                      setState(() {
+                        _selectedNode = hitNode;
+                        _isPanning = false;
+                      });
+                    } else {
+                      _dragNode = null;
+                      _isPanning = true;
+                      setState(() => _selectedNode = null);
+                    }
+                  }
+                }
+              },
+              onScaleUpdate: (details) {
+                final delta = details.focalPoint - _lastFocalPoint;
+                _lastFocalPoint = details.focalPoint;
+
+                if (_dragNode != null && details.pointerCount == 1) {
+                  final canvasDelta = delta / _scale;
+                  setState(() {
+                    _dragNode!.x = _dragNodeStartPos.dx + canvasDelta.dx;
+                    _dragNode!.y = _dragNodeStartPos.dy + canvasDelta.dy;
+                  });
+                } else if (_isPanning || details.pointerCount > 1) {
+                  setState(() {
+                    _offset += delta;
+                    if (details.pointerCount > 1) {
+                      _scale = (_scale * details.scale).clamp(0.3, 3.0);
+                    }
+                  });
+                }
+              },
+              onScaleEnd: (details) {
+                if (_dragNode != null) {
+                  _commitNodePosition();
+                }
+                _dragNode = null;
+                _isPanning = false;
+              },
+              child: CustomPaint(
+                painter: _WorkflowCanvasPainter(
+                  nodes: workflow.nodes,
+                  connections: workflow.connections,
+                  scale: _scale,
+                  offset: _offset,
+                  selectedNode: _selectedNode,
+                ),
+                size: Size.infinite,
               ),
-              size: Size.infinite,
             ),
           ),
           if (_showMinimap)
@@ -115,13 +181,39 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
     );
   }
 
+  void _commitNodePosition() {
+    if (_dragNode == null) return;
+    final provider = context.read<WorkflowProvider>();
+    final workflow = provider.getById(widget.workflowId);
+    if (workflow == null) return;
+
+    final updatedNodes = workflow.nodes.map((n) {
+      if (n.id == _dragNode!.id) {
+        return WorkflowNode(
+          id: n.id,
+          type: n.type,
+          name: n.name,
+          parameters: n.parameters,
+          x: _dragNode!.x,
+          y: _dragNode!.y,
+          credentials: n.credentials,
+          notes: n.notes,
+        );
+      }
+      return n;
+    }).toList();
+
+    provider.updateWorkflow(workflow.copyWith(nodes: updatedNodes));
+    _selectedNode = updatedNodes.firstWhere((n) => n.id == _dragNode!.id);
+  }
+
   Widget _buildToolbar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.95),
+        color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8)],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -155,9 +247,9 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
     return Container(
       width: 120, height: 100,
       decoration: BoxDecoration(
-        color: AppTheme.canvasBg.withOpacity(0.9),
+        color: AppTheme.canvasBg.withValues(alpha: 0.9),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppTheme.connectionColor.withOpacity(0.5)),
+        border: Border.all(color: AppTheme.connectionColor.withValues(alpha: 0.5)),
       ),
       child: CustomPaint(
         painter: _MinimapPainter(nodes: workflow.nodes, connections: workflow.connections),
@@ -169,18 +261,109 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.95),
+        color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8)],
       ),
       child: TextField(
         decoration: InputDecoration(
           hintText: 'Search or add nodes...',
           prefixIcon: const Icon(Icons.search, size: 20),
+          suffixIcon: _searchNode.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  onPressed: () {
+                    setState(() => _searchNode = '');
+                    _showFilteredPicker(workflow, '');
+                  },
+                )
+              : IconButton(
+                  icon: const Icon(Icons.add, size: 20),
+                  onPressed: () => _addNode(workflow),
+                ),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 12),
         ),
-        onChanged: (v) => setState(() => _searchNode = v),
+        onChanged: (v) {
+          setState(() => _searchNode = v);
+          if (v.isNotEmpty) {
+            _showFilteredPicker(workflow, v);
+          }
+        },
+        onSubmitted: (v) {
+          if (v.isNotEmpty) {
+            _addNodeFromSearch(workflow, v);
+          }
+        },
+      ),
+    );
+  }
+
+  void _showFilteredPicker(Workflow workflow, String query) {
+    final nodeTypes = [
+      ('Trigger', 'trigger', Icons.flash_on, Colors.amber),
+      ('Action', 'action', Icons.settings, Colors.blue),
+      ('Condition', 'condition', Icons.call_split, Colors.green),
+      ('Output', 'output', Icons.output, Colors.purple),
+      ('HTTP Request', 'http', Icons.http, Colors.teal),
+      ('Database', 'database', Icons.storage, Colors.indigo),
+      ('Email', 'email', Icons.email, Colors.orange),
+      ('AI Model', 'ai', Icons.auto_awesome, Colors.pink),
+    ];
+
+    final q = query.toLowerCase();
+    final filtered = nodeTypes.where((nt) => nt.$1.toLowerCase().contains(q)).toList();
+
+    if (filtered.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _buildFilteredPickerSheet(ctx, workflow, filtered),
+    );
+  }
+
+  Widget _buildFilteredPickerSheet(BuildContext ctx, Workflow workflow, List<({String $1, String $2, IconData $3, Color $4})> items) {
+    return Container(
+      height: MediaQuery.of(ctx).size.height * 0.4,
+      decoration: BoxDecoration(
+        color: Theme.of(ctx).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 40, height: 4,
+            margin: const EdgeInsets.only(top: 12),
+            decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2)),
+          ),
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('Select Node Type', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: items.length,
+              itemBuilder: (_, i) {
+                final nt = items[i];
+                return ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: nt.$4.withValues(alpha: 0.2),
+                    child: Icon(nt.$3, color: nt.$4, size: 22),
+                  ),
+                  title: Text(nt.$1, style: const TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: Text('${nt.$2} node', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                  onTap: () {
+                    _createNode(workflow, nt.$2, nt.$1);
+                    Navigator.pop(ctx);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -190,9 +373,9 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
       width: 260,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.95),
+        color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 12)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -266,7 +449,79 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
       case 'action': return Icons.settings;
       case 'condition': return Icons.call_split;
       case 'output': return Icons.output;
+      case 'http': return Icons.http;
+      case 'database': return Icons.storage;
+      case 'email': return Icons.email;
+      case 'ai': return Icons.auto_awesome;
       default: return Icons.circle;
+    }
+  }
+
+  void _createNode(Workflow workflow, String type, String name) {
+    _pushUndo(workflow);
+
+    double newX;
+    double newY;
+
+    if (workflow.nodes.isNotEmpty) {
+      final lastNode = workflow.nodes.last;
+      newX = lastNode.x + 250;
+      newY = lastNode.y;
+    } else {
+      newX = 200;
+      newY = 200;
+    }
+
+    final newNode = WorkflowNode(
+      type: type,
+      name: name,
+      x: newX,
+      y: newY,
+    );
+
+    final updatedNodes = [...workflow.nodes, newNode];
+
+    List<WorkflowConnection> updatedConnections = [...workflow.connections];
+    if (workflow.nodes.isNotEmpty) {
+      final lastNode = workflow.nodes.last;
+      updatedConnections.add(WorkflowConnection(
+        sourceNodeId: lastNode.id,
+        sourceOutput: 0,
+        targetNodeId: newNode.id,
+        targetInput: 0,
+      ));
+    }
+
+    final updated = workflow.copyWith(
+      nodes: updatedNodes,
+      connections: updatedConnections,
+    );
+    context.read<WorkflowProvider>().updateWorkflow(updated);
+
+    setState(() {
+      _selectedNode = newNode;
+      _searchNode = '';
+    });
+  }
+
+  void _addNodeFromSearch(Workflow workflow, String query) {
+    final nodeTypes = [
+      ('Trigger', 'trigger'),
+      ('Action', 'action'),
+      ('Condition', 'condition'),
+      ('Output', 'output'),
+      ('HTTP Request', 'http'),
+      ('Database', 'database'),
+      ('Email', 'email'),
+      ('AI Model', 'ai'),
+    ];
+
+    final q = query.toLowerCase();
+    final match = nodeTypes.where((nt) => nt.$1.toLowerCase().contains(q)).firstOrNull;
+    if (match != null) {
+      _createNode(workflow, match.$2, match.$1);
+    } else {
+      _createNode(workflow, 'action', query);
     }
   }
 
@@ -302,7 +557,7 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
           Container(
             width: 40, height: 4,
             margin: const EdgeInsets.only(top: 12),
-            decoration: BoxDecoration(color: Colors.grey.withOpacity(0.3), borderRadius: BorderRadius.circular(2)),
+            decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2)),
           ),
           const Padding(
             padding: EdgeInsets.all(16),
@@ -317,22 +572,14 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
                 final nt = nodeTypes[i];
                 return GestureDetector(
                   onTap: () {
-                    _pushUndo(workflow);
-                    final newNode = WorkflowNode(
-                      type: nt.$2,
-                      name: nt.$1,
-                      x: 200 + math.Random().nextDouble() * 200,
-                      y: 150 + math.Random().nextDouble() * 200,
-                    );
-                    final updated = workflow.copyWith(nodes: [...workflow.nodes, newNode]);
-                    context.read<WorkflowProvider>().updateWorkflow(updated);
+                    _createNode(workflow, nt.$2, nt.$1);
                     Navigator.pop(ctx);
                   },
                   child: Container(
                     decoration: BoxDecoration(
-                      color: nt.$4.withOpacity(0.15),
+                      color: nt.$4.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: nt.$4.withOpacity(0.3)),
+                      border: Border.all(color: nt.$4.withValues(alpha: 0.3)),
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -442,7 +689,7 @@ class _WorkflowCanvasPainter extends CustomPainter {
     canvas.scale(scale);
 
     // Draw grid
-    final gridPaint = Paint()..color = AppTheme.connectionColor.withOpacity(0.1)..strokeWidth = 0.5;
+    final gridPaint = Paint()..color = AppTheme.connectionColor.withValues(alpha: 0.1)..strokeWidth = 0.5;
     for (double x = -2000; x < 4000; x += 40) {
       canvas.drawLine(Offset(x, -2000), Offset(x, 4000), gridPaint);
     }
@@ -460,7 +707,7 @@ class _WorkflowCanvasPainter extends CustomPainter {
       final src = nodes.where((n) => n.id == conn.sourceNodeId).firstOrNull;
       final tgt = nodes.where((n) => n.id == conn.targetNodeId).firstOrNull;
       if (src == null || tgt == null) continue;
-      final start = Offset(src.x + 80, src.y + 30);
+      final start = Offset(src.x + 160, src.y + 30);
       final end = Offset(tgt.x, tgt.y + 30);
       final ctrl1 = Offset(start.dx + (end.dx - start.dx) * 0.5, start.dy);
       final ctrl2 = Offset(start.dx + (end.dx - start.dx) * 0.5, end.dy);
@@ -488,11 +735,11 @@ class _WorkflowCanvasPainter extends CustomPainter {
       );
 
       // Shadow
-      final shadowPaint = Paint()..color = Colors.black.withOpacity(0.3)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+      final shadowPaint = Paint()..color = Colors.black.withValues(alpha: 0.3)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
       canvas.drawRRect(nodeRect.shift(const Offset(3, 3)), shadowPaint);
 
       // Node background
-      final nodePaint = Paint()..color = isSelected ? AppTheme.primaryColor.withOpacity(0.3) : AppTheme.nodeBg;
+      final nodePaint = Paint()..color = isSelected ? AppTheme.primaryColor.withValues(alpha: 0.3) : AppTheme.nodeBg;
       canvas.drawRRect(nodeRect, nodePaint);
 
       // Border
@@ -567,7 +814,7 @@ class _MinimapPainter extends CustomPainter {
       final tgt = nodes.where((n) => n.id == conn.targetNodeId).firstOrNull;
       if (src == null || tgt == null) continue;
       canvas.drawLine(
-        Offset(10 + (src.x - minX + 80) * s, 10 + (src.y - minY + 30) * s),
+        Offset(10 + (src.x - minX + 160) * s, 10 + (src.y - minY + 30) * s),
         Offset(10 + (tgt.x - minX) * s, 10 + (tgt.y - minY + 30) * s),
         Paint()..color = AppTheme.connectionColor..strokeWidth = 1,
       );

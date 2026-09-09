@@ -24,7 +24,7 @@ android {
 
     defaultConfig {
         applicationId "com.n8n.mobile.studio"
-        minSdkVersion 21
+        minSdkVersion 23
         targetSdkVersion 34
         versionCode 1
         versionName "1.0.0"
@@ -35,6 +35,10 @@ android {
             signingConfig signingConfigs.debug
         }
     }
+}
+
+dependencies {
+    implementation 'androidx.biometric:biometric:1.1.0'
 }
 
 flutter {
