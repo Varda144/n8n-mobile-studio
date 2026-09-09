@@ -49,7 +49,7 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
           IconButton(icon: const Icon(Icons.redo), onPressed: _redoStack.isNotEmpty ? _redo : null),
           IconButton(
             icon: _validating
-                ? const SizedBox(width: 20, height: 20, CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.check_circle_outline),
             onPressed: _validate,
           ),
