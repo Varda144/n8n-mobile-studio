@@ -324,7 +324,7 @@ class _WorkflowEditorPageState extends State<WorkflowEditorPage> {
     );
   }
 
-  Widget _buildFilteredPickerSheet(BuildContext ctx, Workflow workflow, List<({String $1, String $2, IconData $3, Color $4})> items) {
+  Widget _buildFilteredPickerSheet(BuildContext ctx, Workflow workflow, List items) {
     return Container(
       height: MediaQuery.of(ctx).size.height * 0.4,
       decoration: BoxDecoration(
