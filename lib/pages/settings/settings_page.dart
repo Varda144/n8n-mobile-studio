@@ -135,7 +135,7 @@ class SettingsPage extends StatelessWidget {
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            color: AppTheme.surfaceDark,
+            color: AppTheme.surface,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Column(children: children),

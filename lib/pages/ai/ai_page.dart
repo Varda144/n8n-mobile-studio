@@ -50,7 +50,7 @@ class _AiPageState extends State<AiPage> {
                       margin: const EdgeInsets.symmetric(horizontal: 3),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
-                        color: selected ? a.$4.withOpacity(0.2) : AppTheme.surfaceDark,
+                        color: selected ? a.$4.withOpacity(0.2) : AppTheme.surface,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
                           color: selected ? a.$4 : Colors.transparent,
@@ -82,7 +82,7 @@ class _AiPageState extends State<AiPage> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: AppTheme.surfaceDark,
+                        color: AppTheme.surface,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Column(
