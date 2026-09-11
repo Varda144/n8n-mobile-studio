@@ -6,6 +6,60 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.serialization'
 }
 
+
+// ---------------------------------------------------------------------------
+// Runtime payloads (opt-in)
+//
+// `assembleDebug`/`assembleRelease` build the embedded runtimes only when the
+// repository asks for it in `runtime-payload.request` (branch list) — so ordinary
+// pushes stay fast, while a payload build produces the Node engine, the n8n
+// payload and the manifest that describes them (scripts/prepare-runtime.sh).
+// Payload sources live in .gitignore: they are tens of megabytes of pinned
+// third-party code and are never committed.
+def payloadRequestFile = rootProject.file("../runtime-payload.request")
+def payloadBranch = System.getenv("GITHUB_REF_NAME") ?: ""
+def payloadBranches = payloadRequestFile.exists()
+        ? payloadRequestFile.readLines().collect { it.trim() }.findAll { it && !it.startsWith("#") }
+        : []
+def payloadRequested = payloadBranch && payloadBranches.contains(payloadBranch)
+def assemblingApk = gradle.startParameter.taskNames.any { it.toLowerCase().contains("assemble") }
+// A payload build is only meaningful when an APK is produced; `gradlew test` and
+// `gradlew lint` must stay fast.
+def buildingPayloads = payloadRequested && assemblingApk
+
+tasks.register("prepareRuntimePayloads", Exec) {
+    group = "runtime"
+    description = "Builds the Node engine and the runtime payloads, then regenerates the manifest."
+    workingDir rootProject.file("..")
+    commandLine "bash", "scripts/prepare-runtime.sh"
+    // Show the payload build's progress in the CI log; it is a long cross-compile.
+    standardOutput = System.out
+    errorOutput = System.err
+    // An APK build that advertises runtimes must fail rather than ship without them.
+    environment "REQUIRE_PACKAGED", "node n8n"
+    onlyIf { buildingPayloads }
+}
+
+tasks.register("verifyRuntimePayloads", Exec) {
+    group = "runtime"
+    description = "Checks that packaged runtimes are backed by real artifacts."
+    workingDir rootProject.file("..")
+    commandLine "bash", "scripts/verify-runtime.sh"
+    standardOutput = System.out
+    errorOutput = System.err
+    onlyIf { buildingPayloads }
+}
+
+// Verification must see the payloads the build just produced.
+tasks.named("verifyRuntimePayloads") { mustRunAfter "prepareRuntimePayloads" }
+
+tasks.matching {
+    it.name in ["mergeDebugAssets", "mergeReleaseAssets", "mergeDebugNativeLibs", "mergeReleaseNativeLibs"]
+}.configureEach {
+    dependsOn "prepareRuntimePayloads"
+    dependsOn "verifyRuntimePayloads"
+}
+
 android {
     namespace 'com.n8n.mobile.studio'
     compileSdk 36
@@ -20,9 +74,10 @@ android {
     buildFeatures { compose true; buildConfig true }
     packaging {
         resources.excludes += '/META-INF/{AL2.0,LGPL2.1}'
-        // The embedded Node launcher (libnoderun.so) must be extracted to
-        // nativeLibraryDir: Android only allows executing code from there, and the
-        // launcher writes its pid so the service can reclaim stale processes.
+        // The embedded Node engine (jniLibs/<abi>/libnode.so) must be extracted to
+        // nativeLibraryDir: Android only executes app files that live there, and
+        // the app starts it as a real process. Turning this off (the AGP default
+        // for minSdk 26+) would leave the engine inside the APK, unexecutable.
         jniLibs { useLegacyPackaging = true }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }

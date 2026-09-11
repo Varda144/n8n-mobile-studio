@@ -252,23 +252,25 @@ eval "set -- $(
 # n8n-mobile-studio: CI diagnostics
 #
 # This project is developed from a phone, where reading a failed GitHub Actions
-# job log is not always possible. Inside Actions the wrapper therefore tees
-# Gradle's output to a file and republishes compiler/test errors as workflow
-# annotations (`::error::`), which `gh run view` lists without needing the log
-# download endpoint. Local runs behave exactly as before.
+# job log is not always possible, and the Actions log download endpoint is not
+# always reachable. Inside Actions the wrapper therefore writes Gradle's output
+# to a file and republishes compiler/test errors as workflow annotations
+# (`::error::`), which `gh run view` shows. Local runs are unchanged.
+#
+# POSIX sh only: gradlew is executed by /bin/sh, not bash.
 if [ -n "${GITHUB_ACTIONS:-}" ]; then
     _n8n_log="${RUNNER_TEMP:-/tmp}/gradle-n8n-studio.log"
-    set +e
-    "$JAVACMD" "$@" 2>&1 | tee "$_n8n_log"
-    _n8n_status=${PIPESTATUS[0]}
-    set -e
+    "$JAVACMD" "$@" >"$_n8n_log" 2>&1
+    _n8n_status=$?
+    cat "$_n8n_log"
     if [ "$_n8n_status" -ne 0 ]; then
-        grep -E "^e: |^w: .*[Ee]rror|error: |What went wrong|Execution failed for task|FAILURE: Build failed|FAILED$" "$_n8n_log" \
+        grep -E "^e: |error: |What went wrong|Execution failed for task|FAILURE: Build failed|FAILED$|Caused by:" "$_n8n_log" \
             | head -n 12 \
             | while IFS= read -r _n8n_line; do
-                printf '::error::%s\n' "$(printf '%s' "$_n8n_line" | tr -d '\r' | cut -c1-900)"
+                _n8n_clean=$(printf '%s' "$_n8n_line" | tr -d '\r' | cut -c1-900)
+                printf '::error::%s\n' "$_n8n_clean"
             done
-        printf '::error::gradle exited with status %s (full log: %s)\n' "$_n8n_status" "$_n8n_log"
+        printf '::error::gradle exited with status %s\n' "$_n8n_status"
     fi
     exit "$_n8n_status"
 fi

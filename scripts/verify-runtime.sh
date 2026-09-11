@@ -25,7 +25,36 @@ REPORT="$LOG_DIR/runtime-verify.txt"
 info "verifying packaged runtimes ($(basename "$MANIFEST"))"
 
 if python3 "$SCRIPT_DIR/lib/verify_manifest.py" "$REPO_ROOT" "$MANIFEST" | tee "$REPORT"; then
-    exit 0
+    # The manifest may be truthful and still describe an APK that embeds nothing.
+    # Release builds say which runtimes they require for real:
+    #   REQUIRE_PACKAGED="node n8n"                    (default)
+    #   REQUIRE_PACKAGED="node n8n opencode"           once OpenCode is buildable
+    #   REQUIRE_PACKAGED=""                            nothing required (debug)
+    REQUIRED="${REQUIRE_PACKAGED-node n8n}"
+    missing=""
+    for component in $REQUIRED; do
+        packaged="$(python3 - "$MANIFEST" "$component" <<'PYX'
+import json, sys
+manifest = json.load(open(sys.argv[1]))
+component = sys.argv[2]
+if component == "node":
+    print("true" if (manifest.get("node") or {}).get("packaged") else "false")
+else:
+    print("true" if ((manifest.get("runtimes") or {}).get(component) or {}).get("packaged") else "false")
+PYX
+)"
+        [ "$packaged" = "true" ] || missing="$missing $component"
+    done
+    if [ -z "$missing" ]; then
+        ok "all required runtimes are packaged"
+        exit 0
+    fi
+    if [ "${ALLOW_UNPACKAGED:-0}" = "1" ]; then
+        warn "not packaged:$missing (allowed because ALLOW_UNPACKAGED=1)"
+        exit 0
+    fi
+    annotate_error "required runtimes are not packaged:$missing"
+    die "required runtimes are not packaged:$missing — this APK would ship without them"
 fi
 
 if [ "${ALLOW_UNPACKAGED:-0}" = "1" ]; then

@@ -5,3 +5,54 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.compose' version '2.2.20' apply false
     id 'org.jetbrains.kotlin.plugin.serialization' version '2.2.20' apply false
 }
+
+// ---------------------------------------------------------------------------
+// CI diagnostics
+//
+// This project is developed from a phone: the Actions job log download endpoint
+// is not always reachable, and the workflows invoke Gradle through the
+// setup-gradle action (so android/gradlew's own diagnostics do not apply). Gradle
+// itself therefore republishes the interesting part of a failed build as
+// workflow annotations, which `gh run view` and the Actions UI show without the
+// raw log. Compiler errors of one file each become one annotation.
+// ---------------------------------------------------------------------------
+if (System.getenv('GITHUB_ACTIONS') != null) {
+    gradle.buildFinished { result ->
+        def failure = result.failure
+        if (failure == null) {
+            return
+        }
+        def lines = new LinkedHashSet<String>()
+        def cursor = failure
+        for (int depth = 0; cursor != null && depth < 8; depth++) {
+            def message = cursor.message
+            if (message != null) {
+                message.readLines().each { lines << it }
+            }
+            cursor = cursor.cause
+        }
+        def interesting = lines.findAll { line ->
+            def text = line.trim()
+            text.startsWith('e: ') ||
+                text.startsWith('error:') ||
+                text.startsWith('FAILURE:') ||
+                text.contains('Unresolved reference') ||
+                text.contains('Execution failed for task') ||
+                text.contains('Could not resolve') ||
+                text.contains('A problem occurred')
+        }
+        def shown = 0
+        interesting.each { line ->
+            if (shown < 20) {
+                println '::error::' + line.trim().take(900)
+                shown += 1
+            }
+        }
+        if (shown == 0) {
+            def fallback = (failure.message ?: failure.class.name).readLines().findAll { it.trim() }
+            fallback.take(5).each { println '::error::' + it.trim().take(900) }
+            shown = fallback.size()
+        }
+        println "::error::Gradle build failed (${failure.class.simpleName}); ${interesting.size()} diagnostic line(s)"
+    }
+}

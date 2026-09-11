@@ -74,7 +74,7 @@ class LocalRuntimeService : Service() {
     private lateinit var env: AndroidRuntimeEnv
     private lateinit var notification: RuntimeNotification
     private lateinit var preferences: RuntimePreferences
-    private lateinit var secrets: RuntimeSecrets
+    private lateinit var credentials: RuntimeSecrets
     private lateinit var payloads: PayloadManager
     private lateinit var terminal: TerminalEngine
     private lateinit var installer: com.n8n.mobile.studio.runtime.RuntimeInstaller
@@ -117,7 +117,7 @@ class LocalRuntimeService : Service() {
         logs = RuntimeLogBuffer()
         payloads = PayloadManager(this, env, installer)
         preferences = RuntimePreferences(this)
-        secrets = RuntimeSecrets()
+        credentials = RuntimeSecrets()
         notification = RuntimeNotification(this)
         notification.createChannel()
 
@@ -132,14 +132,14 @@ class LocalRuntimeService : Service() {
                 N8nConfig(
                     port = config.n8nPort,
                     memoryMb = heapFor(EmbeddedComponent.N8N),
-                    encryptionKey = secrets.n8nEncryptionKey(),
+                    encryptionKey = credentials.n8nEncryptionKey(),
                 )
             },
             openCodeConfig = {
                 OpenCodeConfig(
                     port = config.openCodePort,
                     memoryMb = heapFor(EmbeddedComponent.OPENCODE),
-                    providerKeys = secrets.providerKeys(),
+                    providerKeys = credentials.providerKeys(),
                 )
             },
         )
@@ -266,8 +266,8 @@ class LocalRuntimeService : Service() {
                 payloads.installedVersion(component)?.version
             },
             packagedComponents = payloads.manifest().runtimes.mapValues { it.value.packaged },
-            providerCredentials = secrets.configuredProviders(),
-            n8nEncryptionKeyPresent = secrets.hasN8nEncryptionKey(),
+            providerCredentials = credentials.configuredProviders(),
+            n8nEncryptionKeyPresent = credentials.hasN8nEncryptionKey(),
         )
     }
 

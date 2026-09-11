@@ -1,0 +1,9 @@
+# Payload build opt-in.
+#
+# An APK build on one of the branches listed below also builds the embedded
+# runtimes by running scripts/prepare-runtime.sh before assets and native
+# libraries are merged (see docs/RUNTIME_PAYLOADS.md). That cross-compiles Node
+# for Android and packages n8n, so it takes tens of minutes; everything else stays
+# fast, and the app then reports NOT_PACKAGED for the missing runtimes instead of
+# pretending they exist.
+main

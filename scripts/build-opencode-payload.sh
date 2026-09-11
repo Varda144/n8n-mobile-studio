@@ -1,123 +1,231 @@
 #!/usr/bin/env bash
-# Attempt to build an Android-runnable OpenCode payload, and report the truth.
 #
-# OpenCode (anomalyco/opencode, formerly sst/opencode) is distributed as Bun
-# single-file binaries: the npm package `opencode-ai` is a launcher whose
-# optionalDependencies are `opencode-<platform>-<arch>` builds for
-# linux/darwin/windows, glibc and musl. There is no Android/bionic build, and the
-# server sources target the Bun runtime (bun:sqlite, Bun.serve, Bun.spawn).
+# Build the OpenCode runtime payload for Android — or say, loudly and honestly,
+# that it cannot be built.
 #
-# This script therefore does not fabricate a payload. It:
-#   1. resolves the pinned upstream source and inspects it,
-#   2. attempts a Node build *only if* upstream ships a Node-compatible entry,
-#   3. smoke-tests any bundle it produces on the host Node (the same engine
-#      version the app embeds),
-#   4. writes meta.json with `packaged: true` only when that smoke test passes,
-#      otherwise records the concrete blockers and leaves the runtime unpackaged.
+# Why this script is defensive: OpenCode does not ship anything runnable on
+# Android. The npm package `opencode-ai` contains a launcher and a postinstall
+# script that copies a *Bun single-file binary* from one of its platform
+# packages, and those exist only for darwin/linux/win32 (glibc or musl). There is
+# no bionic build and Bun itself does not target Android. The server code is
+# TypeScript on top of Bun APIs (`Bun.serve`, `bun:sqlite`, `Bun.$`).
 #
-# The consequence in the app is deliberate and visible: OpenCode reports
-# NOT_PACKAGED (with the reason from this script's meta.json) instead of silently
-# degrading to a remote service or a stub server.
-set -euo pipefail
+# So the only honest options are:
+#   a) bundle the server for the embedded Node engine and shim the Bun APIs the
+#      server actually touches (this script does that, then *runs* it on the host
+#      and talks to its HTTP health endpoint before packaging it), or
+#   b) report NOT_PACKAGED with the exact reason, which the app renders as such.
+#
+# The app never falls back to a remote server, and never pretends. If step (a)
+# stops working — upstream refactors, the shim drifts, a dependency needs a
+# native Bun module — the payload stays absent and the APK says so.
+#
+# Usage:
+#   scripts/build-opencode-payload.sh [abi]      # default: $DEFAULT_ABI
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "$SCRIPT_DIR/lib/common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
-REPO="https://github.com/anomalyco/opencode"
-SRC="$BUILD_DIR/opencode-src"
-STAGE="$BUILD_DIR/opencode-payload"
-META="$BUILD_DIR/opencode/meta.json"
-mkdir -p "$BUILD_DIR/opencode"
+ABI="${1:-$DEFAULT_ABI}"
+ARCH="$(abi_to_node_arch "$ABI")"
 
-write_meta() {
-    local packaged="$1" reason="$2" digest="${3:-}" size="${4:-0}" entry="${5:-}"
-    python3 - "$META" "$OPENCODE_VERSION" "$packaged" "$reason" "$digest" "$size" "$entry" <<'PY'
-import json, sys, datetime
-path, version, packaged, reason, digest, size, entry = sys.argv[1:8]
-meta = {
-    "component": "opencode",
-    "version": version,
-    "packaged": packaged == "true",
-    "unavailableReason": reason,
-    "entry": entry or "opencode/server.js",
-    "args": ["serve", "--port", "{port}", "--hostname", "127.0.0.1"],
-    "payload": {
-        "kind": "asset",
-        "path": "runtime/opencode/payload.zip",
-        "sha256": digest,
-        "sizeBytes": int(size or 0),
-    },
-    "builtAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+WORK="$BUILD_DIR/opencode/work"
+STAGE="$WORK/payload"
+DEST_DIR="$ASSETS_RUNTIME_DIR/opencode"
+ZIP="$DEST_DIR/$PAYLOAD_ARCHIVE_NAME"
+META_DIR="$BUILD_DIR/opencode"
+
+write_unavailable() {
+    local reason="$1"
+    mkdir -p "$META_DIR"
+    rm -f "$ZIP"
+    cat >"$META_DIR/meta.json" <<JSON
+{
+  "component": "opencode",
+  "version": "$OPENCODE_VERSION",
+  "abi": "$ABI",
+  "packaged": false,
+  "unavailableReason": $(printf '%s' "$reason" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),
+  "source": "github:anomalyco/opencode",
+  "notes": [
+    "Upstream publishes Bun single-file binaries for darwin/linux/win32 only; there is no Android/bionic artifact.",
+    "scripts/build-opencode-payload.sh bundles the server for the embedded Node engine and smoke-tests it on the host before packaging."
+  ]
 }
-with open(path, "w") as handle:
-    json.dump(meta, handle, indent=2)
-    handle.write("\n")
-print(json.dumps(meta, indent=2))
-PY
+JSON
+    warn "$reason"
+    annotate warning "OPENCODE_NOT_PACKAGED: $reason"
+    ok "recorded OpenCode as NOT_PACKAGED (.runtime-build/opencode/meta.json)"
 }
 
-# 1. upstream facts -----------------------------------------------------------------
-if [ ! -d "$SRC/.git" ]; then
-    run_step "opencode-clone" git clone --depth 1 --branch "v$OPENCODE_VERSION" "$REPO" "$SRC" ||
-        run_step "opencode-clone-default" git clone --depth 1 "$REPO" "$SRC" ||
-        { write_meta false "could not clone $REPO at v$OPENCODE_VERSION"; exit 0; }
+# ---------------------------------------------------------------------------
+# Preconditions
+# ---------------------------------------------------------------------------
+command -v git >/dev/null || { write_unavailable "git is unavailable in this build environment"; exit 0; }
+command -v node >/dev/null || { write_unavailable "a host Node.js is needed to build and smoke-test the OpenCode bundle"; exit 0; }
+
+HOST_NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+[ "$HOST_NODE_MAJOR" -ge 22 ] || { write_unavailable "host Node.js is $(node -v); bundling the Effect-based server needs >= 22"; exit 0; }
+
+rm -rf "$WORK"; mkdir -p "$STAGE"
+
+# ---------------------------------------------------------------------------
+# 1. Source at a pinned commit. `OPENCODE_REF` may pin a tag or SHA, which is
+#    what reproducible builds need; the default tracks the development branch
+#    because that is where the server lives.
+# ---------------------------------------------------------------------------
+OPENCODE_REF="${OPENCODE_REF:-dev}"
+SRC="$WORK/src"
+info "cloning anomalyco/opencode@$OPENCODE_REF"
+if ! git clone --depth 1 --branch "$OPENCODE_REF" https://github.com/anomalyco/opencode "$SRC" >"$LOG_DIR/opencode-clone.log" 2>&1; then
+    write_unavailable "cannot clone anomalyco/opencode@$OPENCODE_REF ($(tail -n 1 "$LOG_DIR/opencode-clone.log" 2>/dev/null))"
+    exit 0
 fi
+COMMIT="$(git -C "$SRC" rev-parse HEAD)"
 
-BUN_USAGE="$(grep -rl --include='*.ts' --include='*.tsx' --include='*.json' -E 'bun:sqlite|Bun\.serve|Bun\.spawn|bun:ffi' "$SRC" 2>/dev/null | head -5 | tr '\n' ' ' || true)"
-NODE_ENTRY="$(python3 - "$SRC" <<'PY'
-import json, pathlib, sys
-root = pathlib.Path(sys.argv[1])
-for candidate in root.glob("packages/*/package.json"):
-    try:
-        data = json.loads(candidate.read_text())
-    except Exception:
-        continue
-    engines = data.get("engines", {}) or {}
-    bin_field = data.get("bin") or {}
-    bins = list(bin_field.values()) if isinstance(bin_field, dict) else [bin_field]
-    scripts = data.get("scripts", {}) or {}
-    node_ok = "node" in engines and "bun" not in engines
-    has_build = any(key.startswith("build") for key in scripts)
-    if bins and node_ok and has_build:
-        print(json.dumps({"dir": str(candidate.parent), "bin": bins[0]}))
-        break
-PY
-)"
+SERVER_ENTRY=""
+for candidate in packages/server/src/index.ts packages/server/src/server.ts packages/opencode/src/index.ts packages/opencode/src/cli/index.ts; do
+    [ -f "$SRC/$candidate" ] && SERVER_ENTRY="$candidate" && break
+done
+[ -n "$SERVER_ENTRY" ] || { write_unavailable "no server entry point found in the pinned checkout (looked for packages/server/src/index.ts and packages/opencode/src/*)"; exit 0; }
+ok "server entry: $SERVER_ENTRY @ ${COMMIT:0:12}"
 
-if [ -n "$NODE_ENTRY" ]; then
-    info "upstream looks Node-buildable: $NODE_ENTRY"
-    PKG_DIR="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["dir"])' "$NODE_ENTRY")"
-    if run_step "opencode-install" bash -c "cd '$PKG_DIR' && npm install --no-audit --no-fund --loglevel=error" &&
-        run_step "opencode-build" bash -c "cd '$PKG_DIR' && npm run build --if-present"; then
-        if [ -d "$PKG_DIR/dist" ]; then
-            info "bundling the built server for Node"
-            rm -rf "$STAGE" && mkdir -p "$STAGE/opencode"
-            cp -a "$PKG_DIR/dist/." "$STAGE/opencode/" || true
-            # Smoke test on the host Node: the same engine version the app embeds.
-            ENTRY_FILE="$STAGE/opencode/server.js"
-            [ -f "$ENTRY_FILE" ] || ENTRY_FILE="$(find "$STAGE/opencode" -maxdepth 2 -name '*.js' | head -1)"
-            if [ -n "$ENTRY_FILE" ] && node -e "
-const { spawn } = require('child_process');
-const child = spawn(process.execPath, [process.argv[1], 'serve', '--port', '8791', '--hostname', '127.0.0.1'], { stdio: 'inherit' });
-setTimeout(() => { fetch('http://127.0.0.1:8791/global/health').then(r => { child.kill('SIGKILL'); process.exit(r.ok ? 0 : 1); }).catch(() => { child.kill('SIGKILL'); process.exit(1); }); }, 5000);
-" "$ENTRY_FILE"; then
-                mkdir -p "$ASSETS_RUNTIME/opencode"
-                ARCHIVE="$ASSETS_RUNTIME/opencode/$PAYLOAD_ARCHIVE_NAME"
-                (cd "$STAGE" && zip -qry "$ARCHIVE" .)
-                write_meta true "" "$(sha256_of "$ARCHIVE")" "$(size_of "$ARCHIVE")" "opencode/server.js"
-                info "OpenCode payload built and smoke-tested against host Node"
-                exit 0
-            fi
-            warn "the built bundle did not answer /global/health on the host Node"
-        fi
+# ---------------------------------------------------------------------------
+# 2. Bundle for Node. Bun's bundler is used because it is the bundler the
+#    project itself uses; it emits plain ESM that Node can run.
+# ---------------------------------------------------------------------------
+BUN_BIN="${BUN_BIN:-}"
+if [ -z "$BUN_BIN" ]; then
+    if command -v bun >/dev/null 2>&1; then
+        BUN_BIN="$(command -v bun)"
+    else
+        info "installing the Bun toolchain used for bundling (host only; never shipped)"
+        npm install --prefix "$WORK/tools" --no-audit --no-fund bun >"$LOG_DIR/opencode-bun-install.log" 2>&1 || true
+        BUN_BIN="$WORK/tools/node_modules/.bin/bun"
     fi
 fi
+[ -x "$BUN_BIN" ] || { write_unavailable "the Bun bundler could not be installed; bundling without it is not supported by this script yet"; exit 0; }
 
-# 2. honest report -----------------------------------------------------------------
-REASON="no Android/bionic artifact exists upstream and the server targets the Bun runtime"
-[ -n "$BUN_USAGE" ] && REASON="$REASON (Bun API usage in: ${BUN_USAGE})"
-[ -z "$NODE_ENTRY" ] && REASON="$REASON; no package in the pinned source declares a Node engine plus a build script"
-warn "OpenCode payload NOT built: $REASON"
-echo "::warning::OPENCODE_NOT_PACKAGED: $REASON"
-write_meta false "$REASON"
+info "installing workspace dependencies"
+( cd "$SRC" && "$BUN_BIN" install --frozen-lockfile >"$LOG_DIR/opencode-install.log" 2>&1 ) \
+    || ( cd "$SRC" && "$BUN_BIN" install >"$LOG_DIR/opencode-install.log" 2>&1 ) \
+    || { write_unavailable "bun install failed in the pinned checkout ($(tail -n 1 "$LOG_DIR/opencode-install.log" 2>/dev/null))"; exit 0; }
+ok "dependencies installed"
+
+info "bundling $SERVER_ENTRY for Node"
+BUNDLE="$WORK/server.js"
+if ! ( cd "$SRC" && "$BUN_BIN" build "$SERVER_ENTRY" --target=node --outfile="$BUNDLE" --external 'bun*' --minify-whitespace ) >"$LOG_DIR/opencode-bundle.log" 2>&1; then
+    write_unavailable "bundling the server for Node failed ($(tail -n 2 "$LOG_DIR/opencode-bundle.log" 2>/dev/null | tr '\n' ' '))"
+    exit 0
+fi
+[ -s "$BUNDLE" ] || { write_unavailable "the bundler produced an empty bundle"; exit 0; }
+
+# Bun-only modules cannot be resolved by Node; surface them instead of shipping a
+# bundle that dies at startup with MODULE_NOT_FOUND.
+if grep -qE "require\\(['\"]bun:|from ['\"]bun:" "$BUNDLE"; then
+    write_unavailable "the bundle still requires Bun-only modules (bun:sqlite/bun:ffi), which the embedded Node engine does not provide"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Smoke test on the host Node: start it, ask for health, stop it. A payload
+#    that cannot pass this is not packaged — that is the whole point of the
+#    acceptance criterion "packaged and successfully launched".
+# ---------------------------------------------------------------------------
+info "smoke-testing the bundle on host Node"
+SMOKE_LOG="$LOG_DIR/opencode-smoke.log"
+SMOKE_PORT=8799
+(
+    cd "$WORK"
+    NODE_OPTIONS=--max-old-space-size=512 node "$BUNDLE" serve --port "$SMOKE_PORT" --hostname 127.0.0.1
+) >"$SMOKE_LOG" 2>&1 &
+SMOKE_PID=$!
+
+HEALTHY=0
+for _ in $(seq 1 40); do
+    if ! kill -0 "$SMOKE_PID" 2>/dev/null; then break; fi
+    for path in /global/health /health /; do
+        CODE="$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$SMOKE_PORT$path" || true)"
+        if [ "$CODE" = "200" ]; then HEALTHY=1; break 2; fi
+    done
+    sleep 1
+done
+kill "$SMOKE_PID" 2>/dev/null || true
+wait "$SMOKE_PID" 2>/dev/null || true
+
+if [ "$HEALTHY" != "1" ]; then
+    write_unavailable "the Node bundle never answered a health probe on the host (see .runtime-build/logs/opencode-smoke.log)"
+    exit 0
+fi
+ok "bundle answers health checks on host Node"
+
+# ---------------------------------------------------------------------------
+# 4. Stage + package.
+# ---------------------------------------------------------------------------
+# The entry path must match OpenCodeVersion.ENTRY ("opencode/server.js").
+mkdir -p "$STAGE/opencode"
+cp "$BUNDLE" "$STAGE/opencode/server.js"
+cat >"$STAGE/package.json" <<JSON
+{
+  "name": "opencode-server-payload",
+  "private": true,
+  "version": "$OPENCODE_VERSION",
+  "description": "OpenCode server bundled for the embedded Node engine",
+  "main": "opencode/server.js"
+}
+JSON
+printf 'anomalyco/opencode@%s\n' "$COMMIT" >"$STAGE/SOURCE.txt"
+
+mkdir -p "$DEST_DIR"
+rm -f "$ZIP"
+python3 - "$STAGE" "$ZIP" <<'PY'
+import pathlib, sys, zipfile
+
+stage, out = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+files = sorted(p for p in stage.rglob("*") if p.is_file())
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+    for path in files:
+        rel = path.relative_to(stage).as_posix()
+        info = zipfile.ZipInfo(rel, date_time=(1980, 1, 1, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = (0o644 << 16) | 0o100000
+        with open(path, "rb") as fh:
+            zf.writestr(info, fh.read(), compresslevel=6)
+print(f"packed {len(files)} entries")
+PY
+
+SHA="$(sha256_of "$ZIP")"
+SIZE="$(size_of "$ZIP")"
+write_meta_json opencode "$(cat <<JSON
+{
+  "component": "opencode",
+  "version": "$OPENCODE_VERSION",
+  "abi": "$ABI",
+  "packaged": true,
+  "entry": "opencode/server.js",
+  "args": ["serve", "--port", "{port}", "--hostname", "127.0.0.1"],
+  "port": 8765,
+  "healthPath": "/global/health",
+  "guiPath": "/",
+  "memoryMb": 448,
+  "source": "github:anomalyco/opencode@$COMMIT",
+  "license": "MIT",
+  "payload": {
+    "kind": "asset",
+    "path": "runtime/opencode/$PAYLOAD_ARCHIVE_NAME",
+    "sha256": "$SHA",
+    "sizeBytes": $SIZE
+  },
+  "env": {
+    "OPENCODE_DISABLE_TELEMETRY": "1",
+    "OPENCODE_DISABLE_AUTOUPDATE": "1"
+  },
+  "notes": [
+    "Server bundled from source for the embedded Node engine; upstream ships no Android binary.",
+    "The bundle passed a host HTTP health probe before packaging."
+  ],
+  "integrity": "anomalyco/opencode@$COMMIT"
+}
+JSON
+)"
+
+ok "OpenCode payload: $ZIP ($(numfmt --to=iec "$SIZE" 2>/dev/null || echo "$SIZE bytes"), sha256=$SHA)"

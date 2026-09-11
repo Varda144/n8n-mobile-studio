@@ -12,13 +12,13 @@ package com.n8n.mobile.studio.terminal
 object TerminalParser {
 
     fun parse(line: String): ParsedCommand? {
-        val tokens = tokenize(line)
-        val name = tokens.firstOrNull()?.takeIf { it.isNotBlank() } ?: return null
-        return ParsedCommand(name = name, args = tokens.drop(1), raw = line)
+        val parts = tokenize(line)
+        val name = parts.firstOrNull()?.takeIf { it.isNotBlank() } ?: return null
+        return ParsedCommand(name = name, args = parts.drop(1), raw = line)
     }
 
     fun tokenize(line: String): List<String> {
-        val tokens = mutableListOf<String>()
+        val parts = mutableListOf<String>()
         val current = StringBuilder()
         var inSingle = false
         var inDouble = false
@@ -43,7 +43,7 @@ object TerminalParser {
                 }
                 char.isWhitespace() && !inSingle && !inDouble -> {
                     if (hasToken) {
-                        tokens += current.toString()
+                        parts += current.toString()
                         current.setLength(0)
                         hasToken = false
                     }
@@ -54,7 +54,7 @@ object TerminalParser {
                 }
             }
         }
-        if (hasToken) tokens += current.toString()
-        return tokens
+        if (hasToken) parts += current.toString()
+        return parts
     }
 }

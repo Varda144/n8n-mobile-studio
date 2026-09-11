@@ -16,6 +16,11 @@ import sys
 import zipfile
 
 MIN_ENGINE_BYTES = 5 * 1024 * 1024
+HEX64 = __import__("re").compile(r"^[0-9a-f]{64}$")
+
+
+def is_sha256(value: str) -> bool:
+    return bool(HEX64.match(value or ""))
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -83,9 +88,19 @@ def check_runtime(
         problems.append(f"{component}: packaged but {relative} is missing")
         return
 
-    digest = sha256(archive)
-    if payload.get("sha256") and digest != payload["sha256"]:
-        problems.append(f"{component}: payload digest mismatch ({digest[:12]}… vs {payload['sha256'][:12]}…)")
+    declared_digest = (payload.get("sha256") or "").strip()
+    if not declared_digest:
+        # Without a digest the APK cannot prove which payload it ships, and a
+        # corrupted/foreign archive would be installed unnoticed.
+        problems.append(f"{component}: packaged without a sha256 digest for its payload")
+    elif not is_sha256(declared_digest):
+        problems.append(f"{component}: payload sha256 is malformed ({declared_digest[:16]}…)")
+    else:
+        digest = sha256(archive)
+        if digest != declared_digest:
+            problems.append(
+                f"{component}: payload digest mismatch ({digest[:12]}… vs {declared_digest[:12]}…)"
+            )
     size = archive.stat().st_size
     if payload.get("sizeBytes") and size != payload["sizeBytes"]:
         problems.append(f"{component}: payload size mismatch ({size} vs {payload['sizeBytes']})")
@@ -116,8 +131,12 @@ def check_node(repo: pathlib.Path, manifest: dict, problems: list[str], notes: l
             if not binary.is_file():
                 problems.append(f"node/{abi}: manifest declares an engine but {binary} is missing")
                 continue
+            declared = (payload.get("sha256") or "").strip()
+            if not is_sha256(declared):
+                problems.append(f"node/{abi}: packaged without a valid sha256 digest")
+                continue
             digest = sha256(binary)
-            if payload.get("sha256") and digest != payload["sha256"]:
+            if digest != declared:
                 problems.append(f"node/{abi}: engine digest mismatch")
             if payload.get("sizeBytes") and binary.stat().st_size != payload["sizeBytes"]:
                 problems.append(f"node/{abi}: engine size mismatch")

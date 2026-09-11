@@ -1,132 +1,157 @@
 #!/usr/bin/env bash
-# Cross-compile Node.js for Android and install it as a jniLib.
 #
-# Android refuses to execute app-owned files unless they ship as native
-# libraries, so the runtime engine is built as an executable and packaged under
-# `jniLibs/<abi>/libnode.so` (with `extractNativeLibs` enabled, it lands in
-# `ApplicationInfo.nativeLibraryDir`, which the app is allowed to exec).
+# Cross-compile the Node.js engine for Android.
 #
-# Uses upstream Node's own Android support (`./android-configure`), which is the
-# supported way to build Node for Android and is what React Native and
-# nodejs-mobile build on. Nothing here patches Node's source beyond the patch
-# file upstream ships for the V8 trap handler.
+# Why this is done with upstream's own build system instead of shipping a
+# prebuilt arm64 binary: Android refuses to execute files that did not arrive
+# through the APK's lib/<abi>/ directory, so the engine has to be produced as an
+# ELF for exactly these ABIs, linked against the NDK sysroot of minSdk 26. The
+# result is installed as `jniLibs/<abi>/libnode.so`; it is an executable despite
+# the .so name, which is the one place Android lets an app put executable code
+# that survives app-data sandboxing and SELinux.
 #
-# Usage: scripts/build-node-android.sh [abi ...]      (default: arm64-v8a)
-# Env:   NODE_VERSION (default v24.9.0), ANDROID_API_LEVEL (default 26),
-#        ANDROID_NDK_HOME (auto-detected / installed via sdkmanager)
-set -euo pipefail
+# Usage:
+#   scripts/build-node-android.sh [abi ...]     # default: $DEFAULT_ABI
+#
+# Environment:
+#   NODE_VERSION   pinned Node release (default 24.9.0, matches RuntimePins.kt)
+#   ANDROID_NDK_HOME   NDK location; otherwise discovered from the SDK
+#   JOBS           make -j (default: nproc)
+#
+# Output:
+#   android/app/src/main/jniLibs/<abi>/libnode.so
+#   android/app/src/main/jniLibs/<abi>/libc++_shared.so   (when the engine needs it)
+#   .runtime-build/node/meta.json                          (digests for the manifest)
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "$SCRIPT_DIR/lib/common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
 ABIS=("$@")
-[ "${#ABIS[@]}" -eq 0 ] && ABIS=("arm64-v8a")
+[ ${#ABIS[@]} -gt 0 ] || ABIS=("$DEFAULT_ABI")
 
-arch_for_abi() {
-    case "$1" in
-        arm64-v8a) echo "arm64" ;;
-        armeabi-v7a) echo "arm" ;;
-        x86_64) echo "x86_64" ;;
-        x86) echo "x86" ;;
-        *) die "unsupported ABI: $1" ;;
-    esac
-}
+NDK="$(require_ndk)"
+JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+SRC_DIR="$BUILD_DIR/node-src"
 
-NDK="$(find_ndk)"
-info "NDK:          $NDK"
-info "Node:         $NODE_VERSION"
-info "Android API:  $ANDROID_API_LEVEL"
-info "ABIs:         ${ABIS[*]}"
+info "Node $NODE_VERSION for Android, ABI(s): ${ABIS[*]}"
+info "NDK: $NDK"
+info "jobs: $JOBS"
 
-SOURCE_DIR="$BUILD_DIR/node-$NODE_VERSION"
-if [ ! -d "$SOURCE_DIR" ]; then
-    mkdir -p "$BUILD_DIR"
-    # GitHub's source tarball is used because it is reachable from every
-    # environment this project builds in (nodejs.org dist is the fallback).
-    URL="https://github.com/nodejs/node/archive/refs/tags/$NODE_VERSION.tar.gz"
-    mkdir -p "$SOURCE_DIR"
-    run_step "fetch-node-source" bash -c \
-        "curl -fsSL '$URL' | tar xz -C '$SOURCE_DIR' --strip-components=1" ||
-        run_step "fetch-node-source-dist" bash -c \
-            "curl -fsSL 'https://nodejs.org/dist/$NODE_VERSION/node-$NODE_VERSION.tar.xz' | tar xJ -C '$SOURCE_DIR' --strip-components=1"
+# ---------------------------------------------------------------------------
+# 1. Fetch the pinned Node source. Prefer the git tag so the exact commit is
+#    reproducible; fall back to the release tarball when only HTTPS is available.
+# ---------------------------------------------------------------------------
+if [ ! -d "$SRC_DIR/.git" ] && [ ! -f "$SRC_DIR/configure.py" ]; then
+    rm -rf "$SRC_DIR"
+    if git clone --depth 1 --branch "v$NODE_VERSION" https://github.com/nodejs/node "$SRC_DIR" \
+        >"$LOG_DIR/node-clone.log" 2>&1; then
+        ok "cloned nodejs/node v$NODE_VERSION"
+    else
+        warn "git clone failed (see .runtime-build/logs/node-clone.log); trying the release tarball"
+        mkdir -p "$SRC_DIR"
+        curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION.tar.xz" -o "$BUILD_DIR/node.tar.xz" \
+            || die "cannot download node v$NODE_VERSION"
+        tar -xJf "$BUILD_DIR/node.tar.xz" -C "$SRC_DIR" --strip-components=1 \
+            || die "cannot unpack node tarball"
+    fi
 fi
-[ -f "$SOURCE_DIR/configure" ] || die "Node source tree at $SOURCE_DIR looks incomplete"
-
-mkdir -p "$JNI_LIBS"
+[ -f "$SRC_DIR/configure.py" ] || die "node source tree at $SRC_DIR is incomplete"
 
 for ABI in "${ABIS[@]}"; do
-    ARCH="$(arch_for_abi "$ABI")"
-    info "building Node for $ABI ($ARCH)"
-    WORK="$BUILD_DIR/node-build-$ABI"
-    rm -rf "$WORK"
-    cp -a "$SOURCE_DIR" "$WORK"
+    ARCH="$(abi_to_node_arch "$ABI")"
 
-    # The patches directory ships with Node itself; applying the trap-handler
-    # patch is what upstream's android-configure documents.
-    (cd "$WORK" && ./android-configure patch >"$LOG_DIR/node-patch-$ABI.log" 2>&1 || true)
+    info "configuring Node for $ABI ($ARCH)"
+    # android-configure sets CC/CXX to the NDK wrappers, applies the V8 patch
+    # needed for Android (trap-handler) and runs ./configure with
+    # --dest-os=android. It must be re-run per ABI in a clean out dir.
+    (
+        cd "$SRC_DIR"
+        export ANDROID_NDK_HOME="$NDK"
+        export GYP_DEFINES="android_ndk_path=$NDK"
+        # `out/` is also what node-gyp reads when cross-compiling native modules
+        # against these headers, so it keeps its default name.
+        rm -rf "$SRC_DIR/out"
+        ./android-configure patch "$NDK" "$ANDROID_API_LEVEL" "$ARCH" >"$LOG_DIR/node-configure-$ABI.log" 2>&1 \
+            || { warn "android-configure failed:"; tail -n 30 "$LOG_DIR/node-configure-$ABI.log" >&2; exit 1; }
+        make -j "$JOBS" >"$LOG_DIR/node-make-$ABI.log" 2>&1 \
+            || { warn "make failed:"; tail -n 40 "$LOG_DIR/node-make-$ABI.log" >&2; exit 1; }
+    ) || die "Node build for $ABI failed (logs in $LOG_DIR/node-*-$ABI.log)"
 
-    # Build flags, in one place so they are auditable:
-    #   --without-intl   : drops ICU (~30 MB) and needs no ICU data on device
-    #   --openssl-no-asm : set by android-configure; ARM asm needs per-ABI tuning
-    #   --without-npm    : payloads are installed at build time, not on device
-    #   --without-corepack
-    # RPATH=$ORIGIN lets the binary find lib/node libs next to itself in
-    # nativeLibraryDir, which is the only directory Android lets it exec from.
-    if ! (cd "$WORK" && \
-            LDFLAGS="-Wl,-rpath,\$ORIGIN" \
-            ./android-configure "$NDK" "$ANDROID_API_LEVEL" "$ARCH" \
-                >"$LOG_DIR/node-configure-$ABI.log" 2>&1 && \
-            LDFLAGS="-Wl,-rpath,\$ORIGIN" make -j"$(nproc)" \
-                >"$LOG_DIR/node-make-$ABI.log" 2>&1); then
-        annotate_file "node-make-$ABI" "$LOG_DIR/node-make-$ABI.log" 10
-        annotate_file "node-configure-$ABI" "$LOG_DIR/node-configure-$ABI.log" 6
-        die "Node build failed for $ABI (see annotations above)"
-    fi
+    BINARY="$SRC_DIR/out/Release/node"
+    [ -f "$BINARY" ] || BINARY="$(find "$SRC_DIR/out" -maxdepth 3 -name node -type f -perm -u+x 2>/dev/null | head -n 1)"
+    [ -n "$BINARY" ] && [ -f "$BINARY" ] || die "Node build for $ABI produced no executable (expected $SRC_DIR/out/Release/node)"
 
-    BINARY="$WORK/out/Release/node"
-    [ -x "$BINARY" ] || die "expected $BINARY after building $ABI"
+    DEST="$JNI_DIR/$ABI"
+    mkdir -p "$DEST"
+    install -m 0755 "$BINARY" "$DEST/libnode.so"
+    assert_elf_machine "$DEST/libnode.so" "$ABI"
 
-    # Prove the artifact is really an ARM64/ARM Android executable before it is
-    # packaged: a host binary sneaking into jniLibs would fail on device.
-    if command -v file >/dev/null 2>&1; then
-        FILE_INFO="$(file -b "$BINARY")"
-        info "  $FILE_INFO"
-        case "$ABI:$FILE_INFO" in
-            arm64-v8a:*aarch64*|arm64-v8a:*ARM\ aarch64*) ;;
-            armeabi-v7a:*ARM*|armeabi-v7a:*armv7*) ;;
-            x86_64:*x86-64*) ;;
-            *) warn "built binary for $ABI does not look like $ABI: $FILE_INFO" ;;
-        esac
-    fi
-
-    mkdir -p "$JNI_LIBS/$ABI"
-    install -m 0755 "$BINARY" "$JNI_LIBS/$ABI/libnode.so"
-
-    # libc++_shared.so: the NDK's C++ runtime, packaged next to libnode.so so the
-    # runner resolves it via $ORIGIN at exec time.
-    TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
-    TRIPLE="$(case "$ABI" in
-        arm64-v8a) echo aarch64-linux-android ;;
-        armeabi-v7a) echo arm-linux-androideabi ;;
-        x86_64) echo x86_64-linux-android ;;
-        x86) echo i686-linux-android ;;
-    esac)"
-    for CANDIDATE in \
-        "$TOOLCHAIN/sysroot/usr/lib/$TRIPLE/libc++_shared.so" \
-        "$TOOLCHAIN/sysroot/usr/lib/$TRIPLE/$ANDROID_API_LEVEL/libc++_shared.so"; do
-        if [ -f "$CANDIDATE" ]; then
-            install -m 0755 "$CANDIDATE" "$JNI_LIBS/$ABI/libc++_shared.so"
-            info "  packaged libc++_shared.so from $CANDIDATE"
-            break
+    # Android's linker runs binaries from lib/<abi>/ with the app's native
+    # library path as the first search directory, so a NEEDED libc++_shared.so
+    # placed next to the engine is found without LD_LIBRARY_PATH games.
+    NEEDED="$(readelf -d "$DEST/libnode.so" 2>/dev/null | grep -o 'libc++_shared.so' | head -n 1 || true)"
+    if [ -n "$NEEDED" ]; then
+        TOOLCHAIN="$(find_ndk | xargs -I{} echo "{}/toolchains/llvm/prebuilt/$(ndk_host_tag)")"
+        TRIPLE="$(abi_to_triple "$ABI")"
+        for CANDIDATE in \
+            "$TOOLCHAIN/sysroot/usr/lib/$TRIPLE/libc++_shared.so" \
+            "$TOOLCHAIN/sysroot/usr/lib/$TRIPLE/${ANDROID_API_LEVEL}/libc++_shared.so"; do
+            if [ -f "$CANDIDATE" ]; then
+                install -m 0755 "$CANDIDATE" "$DEST/libc++_shared.so"
+                break
+            fi
+        done
+        # Older NDKs ship the runtimes in the legacy lib dir; ndk r27 keeps them
+        # in sysroot/usr/lib/<triple>/ with an API-leveled symlink.
+        if [ ! -f "$DEST/libc++_shared.so" ]; then
+            FOUND="$(find "$TOOLCHAIN/sysroot/usr/lib" -name 'libc++_shared.so' -path "*$TRIPLE*" 2>/dev/null | head -n 1)"
+            [ -n "$FOUND" ] && install -m 0755 "$FOUND" "$DEST/libc++_shared.so"
         fi
-    done
+        [ -f "$DEST/libc++_shared.so" ] || die "engine for $ABI needs libc++_shared.so but the NDK sysroot scan found none"
+        ok "$ABI: engine + libc++_shared.so installed"
+    else
+        rm -f "$DEST/libc++_shared.so"
+        ok "$ABI: engine installed (static C++ runtime)"
+    fi
 
-    NODE_BINARY_SHA="$(sha256_of "$BINARY")"
-    NODE_BINARY_SIZE="$(size_of "$BINARY")"
-    printf '%s\n' "$NODE_BINARY_SHA" >"$JNI_LIBS/$ABI/libnode.so.sha256"
-    printf '%s\n' "$NODE_BINARY_SIZE" >"$JNI_LIBS/$ABI/libnode.so.size"
-    info "  sha256=$NODE_BINARY_SHA size=$NODE_BINARY_SIZE"
+    # Record what was actually produced. The manifest generator only trusts this
+    # file, never a hand-written claim.
+    SIZE="$(size_of "$DEST/libnode.so")"
+    DIGEST="$(sha256_of "$DEST/libnode.so")"
+    printf '%s  %s  %s bytes\n' "$ABI" "$DIGEST" "$SIZE" >>"$BUILD_DIR/node/abis.txt"
+    ok "$ABI: libnode.so $(numfmt --to=iec "$SIZE" 2>/dev/null || echo "$SIZE bytes") sha256=$DIGEST"
 done
 
-info "Node payload ready: $(ls -1 "$JNI_LIBS")"
+# ---------------------------------------------------------------------------
+# 2. Emit the Node section of the runtime manifest.
+# ---------------------------------------------------------------------------
+mkdir -p "$BUILD_DIR/node"
+{
+    printf '{\n'
+    printf '  "version": "%s",\n' "$NODE_VERSION"
+    printf '  "distOs": "android",\n'
+    printf '  "flavor": "android-executable",\n'
+    printf '  "library": "libnode.so",\n'
+    printf '  "apiLevel": %s,\n' "$ANDROID_API_LEVEL"
+    printf '  "abis": {\n'
+    first=1
+    for ABI in "${ABIS[@]}"; do
+        [ $first -eq 1 ] || printf ',\n'
+        first=0
+        printf '    "%s": { "sha256": "%s", "sizeBytes": %s }' \
+            "$ABI" "$(sha256_of "$JNI_DIR/$ABI/libnode.so")" "$(size_of "$JNI_DIR/$ABI/libnode.so")"
+    done
+    printf '\n  }\n'
+    printf '}\n'
+} >"$BUILD_DIR/node/node.json"
+
+# Non-empty extra libs, derived from what is actually next to the engine.
+EXTRA="$(cd "$JNI_DIR" && ls */libc++_shared.so 2>/dev/null | sed 's|.*/||' | sort -u | tr '\n' ' ' | sed 's/ $//')"
+python3 - "$BUILD_DIR/node/node.json" "$EXTRA" <<'PY'
+import json, sys, pathlib
+path = pathlib.Path(sys.argv[1])
+data = json.loads(path.read_text())
+data["extraLibs"] = sys.argv[2].split() if sys.argv[2].strip() else []
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+
+ok "Node engine ready: $BUILD_DIR/node/node.json"
