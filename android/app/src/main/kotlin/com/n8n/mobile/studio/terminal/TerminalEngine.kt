@@ -29,25 +29,21 @@ class TerminalEngine {
             emitLine(buffer, onEvent, "$ ${command.displayName}", TerminalOutput.Channel.SYSTEM)
             Logger.d(TAG, "Launching ${command.displayName}")
 
-            when (val launch = RuntimeProcess.launch(commandLine, cwd, environment.values, logFile)) {
-                is Result.Failure -> {
-                    val error = launch.exceptionOrNull()
-                        ?: IllegalStateException("failed to launch ${command.displayName}")
-                    emitLine(buffer, onEvent, "error: ${error.message}", TerminalOutput.Channel.SYSTEM)
-                    onEvent(TerminalOutput.Exited(1))
-                    Result.failure<TerminalSession>(error)
-                }
-
-                is Result.Success -> {
-                    val pid = launch.getOrThrow()
+            RuntimeProcess.launch(commandLine, cwd, environment.values, logFile).fold(
+                onSuccess = { pid ->
                     Logger.d(TAG, "Session $id launched with pid=$pid")
                     pollUntilExited(pid, logFile, buffer, onEvent)
                     onEvent(TerminalOutput.Exited(0))
                     val session = TerminalSession(id = id, command = command, output = buffer)
                     session.finish()
                     Result.success(session)
-                }
-            }
+                },
+                onFailure = { error ->
+                    emitLine(buffer, onEvent, "error: ${error.message}", TerminalOutput.Channel.SYSTEM)
+                    onEvent(TerminalOutput.Exited(1))
+                    Result.failure(error)
+                },
+            )
         } catch (t: Throwable) {
             Logger.e(TAG, "Session $id failed", t)
             emitLine(

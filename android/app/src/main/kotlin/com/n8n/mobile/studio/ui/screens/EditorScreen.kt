@@ -30,6 +30,7 @@ import com.n8n.mobile.studio.ui.theme.StudioPalette
 import com.n8n.mobile.studio.ui.theme.spatialGridBackground
 import kotlin.math.roundToInt
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(onBack: () -> Unit) {
     var zoom by remember { mutableFloatStateOf(1f) }

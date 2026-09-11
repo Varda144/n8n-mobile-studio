@@ -19,7 +19,7 @@ class N8nController(
 
     suspend fun prepare(context: Context): AppResult<Unit> = AppResult.runSuspend {
         if (status().state != EmbeddedProcessState.RUNNING) {
-            start(context).getOrThrow()
+            start(context).toResult().getOrThrow()
         }
         Unit
     }

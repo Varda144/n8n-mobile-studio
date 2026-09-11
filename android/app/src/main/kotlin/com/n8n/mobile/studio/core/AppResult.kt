@@ -26,7 +26,7 @@ sealed interface AppResult<out T> {
         is Err -> null
     }
 
-    fun getOrDefault(default: T): T = when (this) {
+    fun getOrDefault(default: @UnsafeVariance T): T = when (this) {
         is Ok -> value
         is Err -> default
     }

@@ -9,5 +9,5 @@ import kotlinx.coroutines.sync.withLock
 class RuntimeLock {
     private val mutex = Mutex()
 
-    suspend fun <T> withLock(block: suspend () -> T): T = mutex.withLock(block)
+    suspend fun <T> withLock(block: suspend () -> T): T = mutex.withLock(action = block)
 }
