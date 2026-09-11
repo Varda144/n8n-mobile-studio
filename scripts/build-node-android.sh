@@ -80,9 +80,14 @@ for ABI in "${ABIS[@]}"; do
                 || warn "android-configure patch reported failure (continuing): $(tail -n 2 "$LOG_DIR/node-patch-$ABI.log" 2>/dev/null | tr '\n' ' ')"
         fi
         ./android-configure "$NDK" "$ANDROID_API_LEVEL" "$ARCH" >"$LOG_DIR/node-configure-$ABI.log" 2>&1 \
-            || { warn "android-configure failed: $(tail -n 3 "$LOG_DIR/node-configure-$ABI.log" 2>/dev/null | tr '\n' ' | ')"; exit 1; }
+            || {
+                annotate_log_tail "android-configure $ABI" "$LOG_DIR/node-configure-$ABI.log" 6
+                warn "android-configure failed: $(tail -n 3 "$LOG_DIR/node-configure-$ABI.log" 2>/dev/null | tr '\n' ' | ')"
+                exit 1
+            }
         if ! make -j "$JOBS" >"$LOG_DIR/node-make-$ABI.log" 2>&1; then
-            annotate_excerpt "node build $ABI" "$LOG_DIR/node-make-$ABI.log" 4
+            annotate_excerpt "node build $ABI error" "$LOG_DIR/node-make-$ABI.log" 4
+            annotate_log_tail "node build $ABI tail" "$LOG_DIR/node-make-$ABI.log" 10
             warn "make failed: $(log_excerpt "$LOG_DIR/node-make-$ABI.log" 2 | tr '\n' ' | ')"
             exit 1
         fi

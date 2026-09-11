@@ -99,9 +99,21 @@ log_tail() { tail -n "${2:-20}" "$LOG_DIR/${1}.log" 2>/dev/null || true; }
 # excerpt line is also published as its own annotation, because that is the only
 # part of a Gradle Exec failure a phone can read.
 log_excerpt() {
-    local log="$1" max="${2:-4}" line
-    grep -nE 'error:|fatal error|undefined reference|No such file or directory|recipe for target|Error [0-9]+$' \
-        "$log" 2>/dev/null | head -n "$max" || true
+    local log="$1" max="${2:-4}"
+    # Compiler/linker failures only; make's own bookkeeping is noise that would
+    # otherwise crowd out the cause.
+    grep -E ': error:| error:|fatal error|undefined reference|Exec format error|cannot execute binary|Error [0-9]+$' \
+        "$log" 2>/dev/null | sed 's/^[0-9]*://' | head -n "$max" || true
+}
+
+# The tail of a build log is where the failing command and its message are; it is
+# the fastest way to see a cross-compile problem whose message make reformats.
+annotate_log_tail() {
+    local label="$1" log="$2" lines="${3:-8}" line
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        annotate_error "$label: $(printf '%s' "$line" | cut -c1-500)"
+    done < <(grep -v '^[[:space:]]*$' "$log" 2>/dev/null | tail -n "$lines")
 }
 
 annotate_excerpt() {
