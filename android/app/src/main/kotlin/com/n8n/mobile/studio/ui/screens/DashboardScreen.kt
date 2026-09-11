@@ -1,109 +1,129 @@
 package com.n8n.mobile.studio.ui.screens
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.Dns
-import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.n8n.mobile.studio.ui.StudioPalette
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(onInstances: () -> Unit, onAi: () -> Unit) {
-    val metrics = listOf("Workflows" to "—", "Active" to "—", "Successful runs" to "—", "Failed runs" to "—")
-    Scaffold(topBar = {
-        TopAppBar(title = {
-            Column {
-                Text("N8N Mobile Studio", style = MaterialTheme.typography.titleLarge)
-                Text("Local-first automation workspace", style = MaterialTheme.typography.labelSmall)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().background(StudioPalette.Background).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("N8N MOBILE STUDIO", style = androidx.compose.material3.MaterialTheme.typography.headlineLarge)
+                Text("LOCAL AUTOMATION / RESEARCH WORKSPACE", style = androidx.compose.material3.MaterialTheme.typography.labelSmall, color = StudioPalette.Muted)
             }
-        })
-    }) { padding ->
-        LazyColumn(
-            Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
-                Card(onClick = onInstances, modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(18.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        Icon(Icons.Default.CloudDone, contentDescription = null)
-                        Column(Modifier.weight(1f)) {
-                            Text("n8n connection", style = MaterialTheme.typography.titleMedium)
-                            Text("No active instance. Add a local or self-hosted endpoint.", style = MaterialTheme.typography.bodyMedium)
-                        }
+        }
+        item {
+            BrutalistPanel {
+                Text("SYSTEM / 01", style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Default.CloudDone, contentDescription = null)
+                    Column(Modifier.weight(1f)) {
+                        Text("N8N RUNTIME", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                        Text("No active instance. Configure a local endpoint to begin.", color = StudioPalette.Muted)
                     }
                 }
-            }
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = onAi, modifier = Modifier.weight(1f).height(52.dp)) {
-                        Icon(Icons.Default.AutoAwesome, contentDescription = null)
-                        Text("  AI Builder")
-                    }
-                    OutlinedButton(onClick = onInstances, modifier = Modifier.weight(1f).height(52.dp)) {
-                        Icon(Icons.Default.Dns, contentDescription = null)
-                        Text("  Instances")
-                    }
+                Spacer(Modifier.height(12.dp))
+                TextButton(onClick = onInstances, modifier = Modifier.border(2.dp, StudioPalette.Primary)) {
+                    Text("OPEN INSTANCES", color = StudioPalette.Primary)
                 }
             }
-            item { Text("Overview", style = MaterialTheme.typography.titleMedium) }
-            items(metrics.chunked(2)) { row ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    row.forEach { (label, value) ->
-                        Card(Modifier.weight(1f)) {
-                            Column(Modifier.padding(16.dp)) {
-                                Text(value, style = MaterialTheme.typography.headlineMedium)
-                                Text(label, style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
-                    }
-                    if (row.size == 1) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
-                }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                BrutalistAction("AI BUILDER", Icons.Default.AutoAwesome, StudioPalette.Accent, onAi, Modifier.weight(1f))
+                BrutalistAction("INSTANCES", Icons.Default.Dns, StudioPalette.White, onInstances, Modifier.weight(1f))
             }
-            item {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("System status", style = MaterialTheme.typography.titleMedium)
-                        StatusLine(Icons.Default.Dns, "n8n API", "Not configured")
-                        StatusLine(Icons.Default.Hub, "Local tool bridge", "Available when a local bridge is running")
-                        StatusLine(Icons.Default.PlayCircle, "Background sync", "Ready")
-                        StatusLine(Icons.Default.ErrorOutline, "Secrets", "Keystore-backed")
-                    }
-                }
+        }
+        item {
+            Text("OVERVIEW", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetricPanel("WORKFLOWS", "—", Modifier.weight(1f))
+                MetricPanel("ACTIVE", "—", Modifier.weight(1f))
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetricPanel("SUCCESS", "—", Modifier.weight(1f))
+                MetricPanel("FAILED", "—", Modifier.weight(1f))
+            }
+        }
+        item {
+            BrutalistPanel {
+                Text("SYSTEM STATUS", style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(14.dp))
+                StatusLine(Icons.Default.Dns, "N8N API", "NOT CONFIGURED")
+                StatusLine(Icons.Default.Hub, "LOCAL BRIDGE", "WAITING")
+                StatusLine(Icons.Default.PlayCircle, "BACKGROUND SYNC", "READY")
             }
         }
     }
 }
 
 @Composable
+private fun BrutalistPanel(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(StudioPalette.White)
+            .border(2.dp, StudioPalette.Primary)
+            .padding(18.dp),
+        content = content,
+    )
+}
+
+@Composable
+private fun MetricPanel(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .background(StudioPalette.White)
+            .border(2.dp, StudioPalette.Primary)
+            .padding(14.dp),
+    ) {
+        Text(value, style = androidx.compose.material3.MaterialTheme.typography.headlineLarge)
+        Spacer(Modifier.height(4.dp))
+        Text(label, style = androidx.compose.material3.MaterialTheme.typography.labelSmall, color = StudioPalette.Muted)
+    }
+}
+
+@Composable
+private fun BrutalistAction(label: String, icon: androidx.compose.ui.graphics.vector.ImageVector, background: androidx.compose.ui.graphics.Color, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    androidx.compose.material3.Surface(modifier = modifier.border(2.dp, StudioPalette.Primary), color = background) {
+        TextButton(onClick = onClick, modifier = Modifier.fillMaxWidth().height(58.dp)) {
+            Icon(icon, contentDescription = label, tint = StudioPalette.Primary)
+            Spacer(Modifier.width(8.dp))
+            Text(label, color = StudioPalette.Primary, style = androidx.compose.material3.MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
 private fun StatusLine(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, value: String) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Icon(icon, contentDescription = null)
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(value, style = MaterialTheme.typography.bodySmall)
+            Text(title, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
+            Text(value, style = androidx.compose.material3.MaterialTheme.typography.labelSmall, color = StudioPalette.Muted)
         }
     }
 }
