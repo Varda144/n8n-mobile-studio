@@ -46,10 +46,11 @@ if [ ! -d "$SRC_DIR/.git" ] && [ ! -f "$SRC_DIR/configure.py" ]; then
         >"$LOG_DIR/node-clone.log" 2>&1; then
         ok "cloned nodejs/node v$NODE_VERSION"
     else
-        warn "git clone failed (see .runtime-build/logs/node-clone.log); trying the release tarball"
+        warn "git clone of nodejs/node failed: $(tail -n 2 "$LOG_DIR/node-clone.log" 2>/dev/null | tr '\n' ' ')"
+        info "trying the release tarball instead"
         mkdir -p "$SRC_DIR"
         curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION.tar.xz" -o "$BUILD_DIR/node.tar.xz" \
-            || die "cannot download node v$NODE_VERSION"
+            || die "cannot download node v$NODE_VERSION (git clone also failed; see .runtime-build/logs/node-clone.log)"
         tar -xJf "$BUILD_DIR/node.tar.xz" -C "$SRC_DIR" --strip-components=1 \
             || die "cannot unpack node tarball"
     fi

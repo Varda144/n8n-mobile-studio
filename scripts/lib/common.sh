@@ -52,8 +52,20 @@ C_RESET=$'\033[0m'; C_BOLD=$'\033[1m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'
 
 info()  { printf '%s==>%s %s\n' "$C_BLUE$C_BOLD" "$C_RESET" "$*"; }
 ok()    { printf '%s ok %s %s\n' "$C_GREEN$C_BOLD" "$C_RESET" "$*"; }
-warn()  { printf '%swarn%s %s\n' "$C_YELLOW$C_BOLD" "$C_RESET" "$*" >&2; }
-die()   { printf '%sFAIL%s %s\n' "$C_RED$C_BOLD" "$C_RESET" "$*" >&2; exit 1; }
+
+# Warnings and failures are republished as GitHub annotations: the payload build
+# runs inside a Gradle Exec task whose output is not part of the exception chain,
+# so without this a failed cross-compile would say nothing at all.
+warn() {
+    printf '%swarn%s %s\n' "$C_YELLOW$C_BOLD" "$C_RESET" "$*" >&2
+    annotate warning "$*"
+}
+
+die() {
+    printf '%sFAIL%s %s\n' "$C_RED$C_BOLD" "$C_RESET" "$*" >&2
+    annotate_error "runtime payload build: $*"
+    exit 1
+}
 
 # GitHub shows these in the run summary even when the raw log is out of reach
 # (the project is developed from a phone, where the log download endpoint is
