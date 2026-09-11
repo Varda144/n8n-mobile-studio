@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -21,11 +21,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.toIntOffset
 import androidx.compose.ui.text.font.FontWeight
 import com.n8n.mobile.studio.ui.BrutalistAction
 import com.n8n.mobile.studio.ui.StudioPalette
@@ -75,9 +73,7 @@ fun EditorScreen(onBack: () -> Unit) {
                 drawCircle(StudioPalette.Primary, 74f * zoom, p2, style = androidx.compose.ui.graphics.drawscope.Stroke(3f))
             }
 
-            Box(
-                Modifier.offset { IntOffset(nodeOffset.x.roundToInt() - 70, nodeOffset.y.roundToInt() - 28) },
-            ) {
+            Box(Modifier.offset { IntOffset(nodeOffset.x.roundToInt() - 70, nodeOffset.y.roundToInt() - 28) }) {
                 BrutalistAction(onClick = {}, background = StudioPalette.White) {
                     Row {
                         Text("WEBHOOK", fontWeight = FontWeight.Black)
@@ -87,9 +83,7 @@ fun EditorScreen(onBack: () -> Unit) {
                 }
             }
 
-            Box(
-                Modifier.offset { IntOffset((nodeOffset.x + 220f * zoom).roundToInt(), (nodeOffset.y - 28).roundToInt()) },
-            ) {
+            Box(Modifier.offset { IntOffset((nodeOffset.x + 220f * zoom).roundToInt(), (nodeOffset.y - 28).roundToInt()) }) {
                 BrutalistAction(onClick = {}, background = StudioPalette.White) {
                     Text("HTTP REQUEST", fontWeight = FontWeight.Black)
                 }
