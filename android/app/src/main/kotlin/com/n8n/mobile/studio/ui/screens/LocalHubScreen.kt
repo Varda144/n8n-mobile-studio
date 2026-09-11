@@ -11,15 +11,22 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Hub
-import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.Button
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.n8n.mobile.studio.local.LocalRuntimeConfig
 import com.n8n.mobile.studio.local.LocalRuntimeProbe
+import kotlinx.coroutines.launch
 
 private data class LocalTool(val name: String, val role: String)
 
@@ -34,7 +41,10 @@ fun LocalHubScreen() {
         LocalTool("MCP", "Local tools/resources gateway"),
     )
     var status by remember { mutableStateOf("Not checked") }
+    var checking by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val probe = remember { LocalRuntimeProbe() }
+    val config = remember { LocalRuntimeConfig() }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -47,16 +57,24 @@ fun LocalHubScreen() {
         Card(Modifier.fillMaxWidth().padding(top = 16.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Text("n8n local runtime", style = MaterialTheme.typography.titleMedium)
-                Text("Default endpoint: http://127.0.0.1:5678")
-                Text(status, modifier = Modifier.padding(top = 6.dp))
+                Text(config.n8nUrl, style = MaterialTheme.typography.bodySmall)
+                Text(status, modifier = Modifier.padding(top = 8.dp))
                 Button(
+                    enabled = !checking,
                     onClick = {
-                        status = "Checking..."
-                        // A coroutine-backed probe can be wired to a ViewModel in the next screen pass.
-                        status = "Use the instance connection test to probe the configured runtime."
+                        checking = true
+                        status = "Checking localhost…"
+                        scope.launch {
+                            val result = probe.probe(config.n8nUrl)
+                            status = result.detail
+                            checking = false
+                        }
                     },
                     modifier = Modifier.padding(top = 10.dp),
-                ) { Text("Check local setup") }
+                ) {
+                    if (checking) CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
+                    Text(if (checking) "Checking" else "Check local setup")
+                }
             }
         }
         Text("Local toolchain", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
