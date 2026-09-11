@@ -1,13 +1,18 @@
+# Android/Gradle
+android/.gradle/
+android/local.properties
+android/**/build/
+*.iml
+.idea/
+# Flutter prototype artifacts kept out of the migration build
 .dart_tool/
-.packages
-build/
-*.apk
-*.aab
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+# Secrets
 *.jks
 *.keystore
-.idea/
-*.iml
-android/.gradle/
-android/app/build/
-android/local.properties
-android/key.properties
+*.p12
+*.pem
+.env
+.env.*
