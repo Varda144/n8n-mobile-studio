@@ -81,8 +81,11 @@ for ABI in "${ABIS[@]}"; do
         fi
         ./android-configure "$NDK" "$ANDROID_API_LEVEL" "$ARCH" >"$LOG_DIR/node-configure-$ABI.log" 2>&1 \
             || { warn "android-configure failed: $(tail -n 3 "$LOG_DIR/node-configure-$ABI.log" 2>/dev/null | tr '\n' ' | ')"; exit 1; }
-        make -j "$JOBS" >"$LOG_DIR/node-make-$ABI.log" 2>&1 \
-            || { warn "make failed: $(tail -n 3 "$LOG_DIR/node-make-$ABI.log" 2>/dev/null | tr '\n' ' | ')"; exit 1; }
+        if ! make -j "$JOBS" >"$LOG_DIR/node-make-$ABI.log" 2>&1; then
+            annotate_excerpt "node build $ABI" "$LOG_DIR/node-make-$ABI.log" 4
+            warn "make failed: $(log_excerpt "$LOG_DIR/node-make-$ABI.log" 2 | tr '\n' ' | ')"
+            exit 1
+        fi
     ) || die "Node build for $ABI failed (logs in $LOG_DIR/node-*-$ABI.log)"
 
     BINARY="$SRC_DIR/out/Release/node"

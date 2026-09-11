@@ -94,6 +94,24 @@ run_step() {
 
 log_tail() { tail -n "${2:-20}" "$LOG_DIR/${1}.log" 2>/dev/null || true; }
 
+# The first real error in a build log, not the last line: make reports its own
+# bookkeeping last ("Error 2", intermediate files), the cause is further up. Each
+# excerpt line is also published as its own annotation, because that is the only
+# part of a Gradle Exec failure a phone can read.
+log_excerpt() {
+    local log="$1" max="${2:-4}" line
+    grep -nE 'error:|fatal error|undefined reference|No such file or directory|recipe for target|Error [0-9]+$' \
+        "$log" 2>/dev/null | head -n "$max" || true
+}
+
+annotate_excerpt() {
+    local label="$1" log="$2" max="${3:-4}" line
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        annotate_error "$label: $line"
+    done < <(log_excerpt "$log" "$max")
+}
+
 sha256_of() {
     if command -v sha256sum >/dev/null 2>&1; then
         sha256sum "$1" | awk '{print $1}'
