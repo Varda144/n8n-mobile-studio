@@ -80,7 +80,13 @@ fun AppNavigation() {
         },
     ) { padding ->
         NavHost(navController = nav, startDestination = Routes.DASHBOARD, Modifier.padding(padding)) {
-            composable(Routes.DASHBOARD) { DashboardScreen(onInstances = { nav.navigate(Routes.INSTANCES) }, onAi = { nav.navigate(Routes.AI) }) }
+            composable(Routes.DASHBOARD) {
+                DashboardScreen(
+                    onInstances = { nav.navigate(Routes.INSTANCES) },
+                    onAi = { nav.navigate(Routes.AI) },
+                    onLocalHub = { nav.navigate(Routes.HUB) },
+                )
+            }
             composable(Routes.INSTANCES) { InstancesScreen() }
             composable(Routes.WORKFLOWS) { WorkflowsScreen(onEditor = { nav.navigate(Routes.EDITOR) }) }
             composable(Routes.EDITOR) { EditorScreen(onBack = { nav.popBackStack() }) }

@@ -1,28 +1,44 @@
 package com.n8n.mobile.studio.runtime.n8n
 
-import android.content.Context
+import com.n8n.mobile.studio.runtime.EmbeddedComponent
+import com.n8n.mobile.studio.runtime.InstalledPayload
+import com.n8n.mobile.studio.runtime.LaunchSpec
+import com.n8n.mobile.studio.runtime.NodeRuntime
 import com.n8n.mobile.studio.runtime.RuntimePaths
-import com.n8n.mobile.studio.runtime.RuntimeProcess
-import java.io.File
+import com.n8n.mobile.studio.runtime.RuntimeTemplate
 
-class N8nProcess(private val config: N8nConfig = N8nConfig()) {
-    suspend fun launch(context: Context): Result<Long> {
-        val executable = File(RuntimePaths.bin(context), N8nVersion.REQUIRED_EXECUTABLE)
-        if (!executable.exists()) {
-            return Result.failure(
-                IllegalStateException("n8n runtime not packaged yet: expected ${executable.absolutePath}"),
-            )
-        }
-        val storage = N8nStorage(context, config)
-        storage.ensure().getOrThrow()
-        return RuntimeProcess.launch(
-            command = listOf(executable.absolutePath, "start", "--tunnel=false"),
-            cwd = storage.root(),
-            env = mapOf(
-                "N8N_PORT" to config.port.toString(),
-                "N8N_HOST" to config.host,
-            ),
-            logFile = File(RuntimePaths.logs(context), "n8n.log"),
+/**
+ * Turns an installed n8n payload plus its manifest entry into a concrete
+ * [LaunchSpec]. The process is Node with n8n's CLI script as the first argument —
+ * the same command a desktop user would run, executed by the app's embedded Node.
+ */
+class N8nProcess(
+    private val node: NodeRuntime,
+    private val paths: RuntimePaths,
+    private val config: N8nConfig = N8nConfig(),
+) {
+
+    fun spec(
+        installed: InstalledPayload,
+        entryRelative: String,
+        args: List<String>,
+        heapMb: Int,
+        extraEnv: Map<String, String> = emptyMap(),
+    ): LaunchSpec {
+        val component = EmbeddedComponent.N8N
+        val bindings = RuntimeTemplate.bindings(component, paths, config.port, installed.version)
+        val entry = paths.resolveInside(installed.dir, entryRelative)
+        val workingDir = paths.componentData(component).apply { mkdirs() }
+        val env = config.toEnvironment(paths) + RuntimeTemplate.expandEnv(extraEnv, bindings)
+        return node.launchSpec(
+            component = component,
+            entry = entry,
+            args = RuntimeTemplate.expandAll(args, bindings) + config.commandArgs(),
+            workingDir = workingDir,
+            heapMb = heapMb,
+            extraEnv = env,
+            logFile = paths.logFile(component),
+            pidFile = paths.pidFile(component),
         )
     }
 }

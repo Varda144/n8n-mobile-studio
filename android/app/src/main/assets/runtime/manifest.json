@@ -1,18 +1,65 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "manifestVersion": "2026.09.11-1",
   "builtAt": "2026-09-11",
+  "notes": [
+    "This manifest is the contract between the payload build and the app.",
+    "packaged=false means the runtime is NOT embedded in this APK build and the app will report NOT INSTALLED. It never falls back to a remote server.",
+    "scripts/prepare-runtime.sh (run by .github/workflows/runtime-build.yml) fills in versions, digests and packaged=true once the payloads are built and verified.",
+    "Node.js is cross-compiled for Android (--dest-os=android --shared) and shipped as libnode.so + libnoderun.so in jniLibs; n8n and OpenCode run as JavaScript payloads on that Node."
+  ],
+  "node": {
+    "version": "24.9.0",
+    "distOs": "android",
+    "shared": true,
+    "launcher": "libnoderun.so",
+    "library": "libnode.so",
+    "source": "https://github.com/nodejs/node/releases/tag/v24.9.0",
+    "packaged": false,
+    "abis": {
+      "arm64-v8a": { "sha256": "", "sizeBytes": 0 }
+    }
+  },
   "runtimes": {
     "n8n": {
       "enabled": true,
       "packaged": false,
-      "payload": "assets/runtime/n8n/",
-      "port": 5678
+      "version": "2.38.7",
+      "entry": "n8n/bin/n8n",
+      "args": ["start"],
+      "port": 5678,
+      "healthPath": "/healthz",
+      "guiPath": "/",
+      "memoryMb": 512,
+      "integrity": "sha512-ivTEbaYbqUpHtMtqs6NnTPxm0U62v1QKM0gk5hiv94IiwTS9Ykr7rZGdFO/HXVrFaw52SD/+avJMTIT8DlJAeQ==",
+      "source": "https://registry.npmjs.org/n8n/-/n8n-2.38.7.tgz",
+      "license": "SEE LICENSE IN LICENSE.md (sustainable use licence - review before distributing a payload)",
+      "payload": {
+        "kind": "asset",
+        "path": "runtime/n8n/payload.zip",
+        "sha256": "",
+        "sizeBytes": 0
+      }
     },
     "opencode": {
       "enabled": true,
       "packaged": false,
-      "payload": "assets/runtime/opencode/",
-      "port": 8765
+      "version": "1.18.30",
+      "entry": "opencode/server.js",
+      "args": ["serve", "--port", "{port}", "--hostname", "127.0.0.1"],
+      "port": 8765,
+      "healthPath": "/global/health",
+      "guiPath": "/",
+      "memoryMb": 448,
+      "integrity": "sha512-oLcOLQE4XzDKy6T5L5d1RdVJvXHXwVlD4hRF5V317JbUQorrl2EyDdGZk5kbgv675J9FXp8usg92MZbEWhh6gQ==",
+      "source": "https://github.com/anomalyco/opencode (npm opencode-ai 1.18.30 is a launcher for prebuilt binaries; the payload is bundled from source for Node)",
+      "license": "MIT",
+      "payload": {
+        "kind": "asset",
+        "path": "runtime/opencode/payload.zip",
+        "sha256": "",
+        "sizeBytes": 0
+      }
     }
   }
 }

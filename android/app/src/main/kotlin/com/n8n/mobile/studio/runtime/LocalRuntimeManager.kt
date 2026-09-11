@@ -1,54 +1,50 @@
 package com.n8n.mobile.studio.runtime
 
-import android.content.Context
+import com.n8n.mobile.studio.runtime.n8n.N8nConfig
 import com.n8n.mobile.studio.runtime.n8n.N8nRuntime
+import com.n8n.mobile.studio.runtime.opencode.OpenCodeConfig
 import com.n8n.mobile.studio.runtime.opencode.OpenCodeRuntime
 
 /**
- * Orchestrates the embedded N8N and OpenCode runtimes behind a single lock.
+ * Builds the two embedded runtimes from the packaged manifest and the current
+ * user configuration.
+ *
+ * The manager deliberately does *not* own processes: [RuntimeSupervisor] does.
+ * Runtimes are created on demand so that a configuration change (port, memory
+ * budget, freshly rotated n8n encryption key, new provider credential) is picked
+ * up by the next launch instead of being frozen at service creation.
  */
 class LocalRuntimeManager(
-    private val n8n: EmbeddedRuntime = N8nRuntime(),
-    private val openCode: EmbeddedRuntime = OpenCodeRuntime(),
+    private val paths: RuntimePaths,
+    private val installer: RuntimeInstaller,
+    private val node: NodeRuntime,
+    private val manifest: () -> RuntimeManifest,
+    private val n8nConfig: () -> N8nConfig,
+    private val openCodeConfig: () -> OpenCodeConfig,
 ) {
-    private val lock = RuntimeLock()
 
-    /**
-     * Ensure the runtime directory tree exists and both components are unpacked.
-     */
-    suspend fun prepare(context: Context): Result<Unit> = lock.withLock {
-        RuntimePaths.ensure(context)
-            .andThen { n8n.prepare(context) }
-            .andThen { openCode.prepare(context) }
+    fun runtime(component: EmbeddedComponent): EmbeddedRuntime = when (component) {
+        EmbeddedComponent.N8N -> N8nRuntime(
+            paths = paths,
+            installer = installer,
+            node = node,
+            manifest = manifest(),
+            config = n8nConfig(),
+        )
+
+        EmbeddedComponent.OPENCODE -> OpenCodeRuntime(
+            paths = paths,
+            installer = installer,
+            node = node,
+            manifest = manifest(),
+            config = openCodeConfig(),
+        )
     }
 
-    suspend fun start(context: Context, component: EmbeddedComponent): Result<EmbeddedComponentStatus> = lock.withLock {
-        runtime(component).start(context)
+    fun specs(): Map<EmbeddedComponent, ComponentSpec> = EmbeddedComponent.entries.associateWith { component ->
+        manifest().spec(component)
     }
 
-    suspend fun stop(component: EmbeddedComponent): Result<Unit> = lock.withLock {
-        runtime(component).stop()
-    }
-
-    fun status(component: EmbeddedComponent): EmbeddedComponentStatus = runtime(component).status()
-
-    fun allStatuses(): List<EmbeddedComponentStatus> = listOf(n8n.status(), openCode.status())
-
-    private fun runtime(component: EmbeddedComponent): EmbeddedRuntime = when (component) {
-        EmbeddedComponent.N8N -> n8n
-        EmbeddedComponent.OPENCODE -> openCode
-    }
-
-    private inline fun <T, R> Result<T>.andThen(block: (T) -> Result<R>): Result<R> =
-        fold(onSuccess = block, onFailure = { Result.failure(it) })
-}
-
-/**
- * Resolves a component's public endpoint, if any.
- */
-object LocalRuntimeLocator {
-    fun endpoint(component: EmbeddedComponent): String? = when (component) {
-        EmbeddedComponent.N8N -> "http://127.0.0.1:5678"
-        EmbeddedComponent.OPENCODE -> null
-    }
+    /** Expected payload location for a component, used for orphan detection. */
+    fun payloadMarker(component: EmbeddedComponent): String = "/payloads/${component.id}/"
 }

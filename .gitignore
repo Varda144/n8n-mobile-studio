@@ -4,11 +4,16 @@ android/local.properties
 android/**/build/
 *.iml
 .idea/
-# Flutter prototype artifacts kept out of the migration build
-.dart_tool/
-.flutter-plugins
-.flutter-plugins-dependencies
-.pub-cache/
+
+# Runtime payload build outputs (produced by scripts/prepare-runtime.sh in CI).
+# They are tens of megabytes of pinned third-party code and must never be
+# committed; the packaged digest lives in assets/runtime/manifest.json.
+android/app/src/main/assets/runtime/*/payload.zip
+android/app/src/main/assets/runtime/*/payload.zip.sha256
+android/app/src/main/jniLibs/
+.runtime-build/
+.runtime-payloads/
+
 # Secrets
 *.jks
 *.keystore

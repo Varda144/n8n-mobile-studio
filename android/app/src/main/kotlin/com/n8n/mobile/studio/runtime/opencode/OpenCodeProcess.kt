@@ -1,30 +1,53 @@
 package com.n8n.mobile.studio.runtime.opencode
 
-import android.content.Context
+import com.n8n.mobile.studio.runtime.EmbeddedComponent
+import com.n8n.mobile.studio.runtime.InstalledPayload
+import com.n8n.mobile.studio.runtime.LaunchSpec
+import com.n8n.mobile.studio.runtime.NodeRuntime
 import com.n8n.mobile.studio.runtime.RuntimePaths
-import com.n8n.mobile.studio.runtime.RuntimeProcess
-import java.io.File
+import com.n8n.mobile.studio.runtime.RuntimeTemplate
 
-class OpenCodeProcess(private val config: OpenCodeConfig = OpenCodeConfig()) {
-    suspend fun launch(context: Context): Result<Long> {
-        val executable = File(RuntimePaths.bin(context), OpenCodeVersion.REQUIRED_EXECUTABLE)
-        if (!executable.exists()) {
-            return Result.failure(
-                IllegalStateException("OpenCode runtime not packaged yet: expected ${executable.absolutePath}"),
-            )
-        }
-        val root = File(RuntimePaths.data(context), config.rootFolder)
-        if (!root.exists() && !root.mkdirs()) {
-            return Result.failure(IllegalStateException("Failed to create ${root.absolutePath}"))
-        }
-        return RuntimeProcess.launch(
-            command = listOf(executable.absolutePath),
-            cwd = root,
-            env = mapOf(
-                "OPENCODE_PORT" to config.port.toString(),
-                "OPENCODE_HOST" to config.host,
-            ),
-            logFile = File(RuntimePaths.logs(context), "opencode.log"),
+/**
+ * Builds the OpenCode server [LaunchSpec].
+ *
+ * OpenCode is launched exactly like n8n — the embedded Node running a bundled
+ * script — so both runtimes share one process manager, one log pipeline and one
+ * lifecycle policy. The GUI (WebView on the local endpoint, when the payload
+ * serves one) and the terminal attach to the same process.
+ */
+class OpenCodeProcess(
+    private val node: NodeRuntime,
+    private val paths: RuntimePaths,
+    private val config: OpenCodeConfig = OpenCodeConfig(),
+) {
+
+    fun spec(
+        installed: InstalledPayload,
+        entryRelative: String,
+        args: List<String>,
+        heapMb: Int,
+        extraEnv: Map<String, String> = emptyMap(),
+    ): LaunchSpec {
+        val component = EmbeddedComponent.OPENCODE
+        val bindings = RuntimeTemplate.bindings(component, paths, config.port, installed.version)
+        val entry = paths.resolveInside(installed.dir, entryRelative)
+        val workingDir = paths.componentData(component).apply { mkdirs() }
+        config.configDir(paths).mkdirs()
+        config.dataDir(paths).mkdirs()
+        config.cacheDir(paths).mkdirs()
+        config.stateDir(paths).mkdirs()
+        val env = config.toEnvironment(paths) +
+            mapOf("HOME" to paths.componentHome(component).absolutePath) +
+            RuntimeTemplate.expandEnv(extraEnv, bindings)
+        return node.launchSpec(
+            component = component,
+            entry = entry,
+            args = RuntimeTemplate.expandAll(args, bindings),
+            workingDir = workingDir,
+            heapMb = heapMb,
+            extraEnv = env,
+            logFile = paths.logFile(component),
+            pidFile = paths.pidFile(component),
         )
     }
 }

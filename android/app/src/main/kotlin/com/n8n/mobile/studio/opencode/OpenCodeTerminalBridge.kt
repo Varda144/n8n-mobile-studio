@@ -2,36 +2,45 @@ package com.n8n.mobile.studio.opencode
 
 import android.content.Context
 import com.n8n.mobile.studio.core.AppResult
-import com.n8n.mobile.studio.runtime.RuntimePaths
-import com.n8n.mobile.studio.terminal.TerminalCommand
-import com.n8n.mobile.studio.terminal.TerminalEngine
-import com.n8n.mobile.studio.terminal.TerminalEnvironment
+import com.n8n.mobile.studio.runtime.service.RuntimeClient
 import com.n8n.mobile.studio.terminal.TerminalOutput
-import com.n8n.mobile.studio.terminal.TerminalSession
+import com.n8n.mobile.studio.terminal.TerminalResult
 import java.io.File
 
-/** Bridges external terminal events into the OpenCode GUI state. */
+/**
+ * Routes terminal input for OpenCode into the local runtime service.
+ *
+ * The bridge exists so the OpenCode screens and the shared terminal tab issue the
+ * identical call (`client.runCommand`); there is no second command path, and no
+ * code here can start a process the supervisor does not know about.
+ */
 class OpenCodeTerminalBridge(
-    private val engine: TerminalEngine,
-    private val gui: OpenCodeGuiState = OpenCodeGuiState(),
+    private val client: RuntimeClient?,
+    private val controller: OpenCodeController = OpenCodeController(client),
 ) {
-    suspend fun launch(context: Context, projectDir: File): AppResult<TerminalSession> =
-        AppResult.runSuspend {
-            val executable = File(RuntimePaths.bin(context), "opencode")
-            if (!executable.exists()) {
-                throw IllegalStateException("OpenCode runtime not packaged")
-            }
-            val environment = TerminalEnvironment()
-                .withDefaultRuntimeEnv(RuntimePaths.home(context), projectDir)
-            val command = TerminalCommand(
-                executable = executable.absolutePath,
-                cwd = projectDir,
-                environment = environment.values,
-            )
-            engine.run(command, environment) { event -> gui.onEvent(event) }.getOrThrow()
-        }
 
-    fun send(event: TerminalOutput) = gui.onEvent(event)
+    suspend fun run(
+        command: String,
+        sessionId: String = OpenCodeSession.DEFAULT_ID,
+        onEvent: (TerminalOutput) -> Unit,
+    ): AppResult<TerminalResult> = controller.run(sessionId, command, onEvent)
 
-    fun clear() = gui.clear()
+    /** Convenience for the common actions, all routed through the terminal engine. */
+    suspend fun startServer(
+        sessionId: String = OpenCodeSession.DEFAULT_ID,
+        onEvent: (TerminalOutput) -> Unit,
+    ): AppResult<TerminalResult> = run("opencode start", sessionId, onEvent)
+
+    suspend fun status(
+        sessionId: String = OpenCodeSession.DEFAULT_ID,
+        onEvent: (TerminalOutput) -> Unit,
+    ): AppResult<TerminalResult> = run("opencode status", sessionId, onEvent)
+
+    suspend fun logs(
+        sessionId: String = OpenCodeSession.DEFAULT_ID,
+        lines: Int = 60,
+        onEvent: (TerminalOutput) -> Unit,
+    ): AppResult<TerminalResult> = run("opencode logs $lines", sessionId, onEvent)
+
+    fun projectsRoot(context: Context): File = controller.projectsRoot(context)
 }

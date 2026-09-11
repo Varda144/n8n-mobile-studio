@@ -1,31 +1,33 @@
 package com.n8n.mobile.studio.terminal
 
+import com.n8n.mobile.studio.runtime.EmbeddedComponent
+import com.n8n.mobile.studio.runtime.NodeRuntime
+import com.n8n.mobile.studio.runtime.RuntimePaths
 import java.io.File
 
-/** Mutable set of environment variables handed to terminal processes. */
-class TerminalEnvironment(base: Map<String, String> = emptyMap()) {
-    var values: Map<String, String> = base
-        private set
+/**
+ * Environment handed to anything the terminal launches.
+ *
+ * The same [RuntimePaths] and [NodeRuntime] values the supervisor uses are
+ * reused, so a program started from the terminal sees the identical HOME, PATH
+ * and sandbox layout as the n8n/OpenCode processes.
+ */
+class TerminalEnvironment(
+    private val paths: RuntimePaths,
+    private val node: NodeRuntime,
+) {
 
-    fun with(key: String, value: String): TerminalEnvironment {
-        values = values + (key to value)
-        return this
-    }
+    fun forComponent(
+        component: EmbeddedComponent,
+        heapMb: Int,
+        workingDir: File,
+        extra: Map<String, String> = emptyMap(),
+    ): Map<String, String> = node.nodeEnv(component, heapMb, workingDir, extra)
 
-    /** Populate the bare-minimum env a native runtime expects. */
-    fun withDefaultRuntimeEnv(
-        homeDir: File,
-        projectDir: File,
-        pathExtra: String? = null,
-    ): TerminalEnvironment {
-        values = values + mapOf(
-            "HOME" to homeDir.absolutePath,
-            "TMPDIR" to File(homeDir, "tmp").absolutePath,
-            "PWD" to projectDir.absolutePath,
-        )
-        if (values["PATH"] == null) {
-            with("PATH", pathExtra ?: "/system/bin:/vendor/bin:/system/xbin:/usr/bin")
-        }
-        return this
-    }
+    /** Directories that may be listed/traversed from the terminal. */
+    fun root(): File = paths.root
+
+    fun projects(): File = paths.projects
+
+    fun bin(): File = paths.bin
 }

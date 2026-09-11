@@ -18,9 +18,21 @@ android {
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     buildFeatures { compose true; buildConfig true }
-    packaging { resources.excludes += '/META-INF/{AL2.0,LGPL2.1}' }
+    packaging {
+        resources.excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        // The embedded Node launcher (libnoderun.so) must be extracted to
+        // nativeLibraryDir: Android only allows executing code from there, and the
+        // launcher writes its pid so the service can reclaim stale processes.
+        jniLibs { useLegacyPackaging = true }
+    }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = '17' }
+    sourceSets {
+        // Runtime payload build outputs land here (git-ignored):
+        //   assets/runtime/<component>/payload.zip   -> installed by the app
+        //   jniLibs/<abi>/libnode*.so                -> executed by the app
+        main { jniLibs.srcDirs += ['src/main/jniLibs'] }
+    }
     buildTypes {
         debug { applicationIdSuffix '.debug' }
         release { minifyEnabled false; proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'; signingConfig signingConfigs.debug }
@@ -46,6 +58,7 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0'
     implementation 'com.squareup.okhttp3:okhttp:5.1.0'
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.jetbrains.kotlin:kotlin-test-junit:2.2.20'
     testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2'
     androidTestImplementation 'androidx.compose.ui:ui-test-junit4:1.11.4'
     debugImplementation 'androidx.compose.ui:ui-tooling:1.11.4'

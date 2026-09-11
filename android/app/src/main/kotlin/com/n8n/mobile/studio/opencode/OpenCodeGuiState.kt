@@ -3,53 +3,49 @@ package com.n8n.mobile.studio.opencode
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.n8n.mobile.studio.runtime.EmbeddedComponentStatus
+import com.n8n.mobile.studio.runtime.service.RuntimeClient
 import com.n8n.mobile.studio.terminal.TerminalOutput
 import com.n8n.mobile.studio.terminal.TerminalOutputBuffer
 
-/** Compose-observable state backing the OpenCode screen. */
-class OpenCodeGuiState {
-    var running: Boolean by mutableStateOf(false)
+/**
+ * State for OpenCode's two surfaces.
+ *
+ * [guiUrl] is only non-null when the local server is actually answering, so the
+ * GUI can never render an empty frame that looks like a working agent. Terminal
+ * output is buffered with the same bounded buffer the terminal screen uses.
+ */
+class OpenCodeGuiState(private val client: RuntimeClient? = null) {
+
+    var status: EmbeddedComponentStatus by mutableStateOf(
+        client?.statuses?.value?.get(com.n8n.mobile.studio.runtime.EmbeddedComponent.OPENCODE)
+            ?: EmbeddedComponentStatus(com.n8n.mobile.studio.runtime.EmbeddedComponent.OPENCODE),
+    )
         private set
 
-    var statusText: String by mutableStateOf("Stopped")
+    var projectsDir: String by mutableStateOf("")
         private set
 
-    var session: OpenCodeSession? by mutableStateOf(null)
-        private set
+    val buffer = TerminalOutputBuffer()
 
-    val output: List<TerminalOutput.Line> get() = buffer.lines
+    val running: Boolean
+        get() = status.state == com.n8n.mobile.studio.runtime.EmbeddedProcessState.RUNNING
 
-    private val buffer = TerminalOutputBuffer()
+    val guiUrl: String? get() = status.endpoint?.takeIf { running }
 
-    fun onEvent(output: TerminalOutput) {
-        when (output) {
-            is TerminalOutput.Line -> buffer.add(output)
-            is TerminalOutput.Exited -> {
-                running = false
-                statusText = "Exited (${output.exitCode})"
-            }
-        }
+    val statusText: String get() = status.message
+
+    fun refresh() {
+        status = client?.statuses?.value?.get(com.n8n.mobile.studio.runtime.EmbeddedComponent.OPENCODE)
+            ?: status
     }
 
-    fun markStarting() {
-        running = true
-        statusText = "Starting"
+    fun setProjectsDir(path: String) {
+        projectsDir = path
     }
 
-    fun markRunning(pid: Long) {
-        running = true
-        statusText = "Running"
-    }
-
-    fun markStopped() {
-        running = false
-        statusText = "Stopped"
-        session = null
-    }
-
-    fun updateSession(session: OpenCodeSession) {
-        this.session = session
-        running = session.running
+    fun onEvent(event: TerminalOutput) {
+        if (event is TerminalOutput.Line) buffer.add(event)
     }
 
     fun clear() = buffer.clear()

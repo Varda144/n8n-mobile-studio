@@ -1,93 +1,87 @@
 package com.n8n.mobile.studio.runtime.opencode
 
-import android.content.Context
+import com.n8n.mobile.studio.runtime.ComponentSpec
 import com.n8n.mobile.studio.runtime.EmbeddedComponent
-import com.n8n.mobile.studio.runtime.EmbeddedComponentStatus
-import com.n8n.mobile.studio.runtime.EmbeddedProcessState
 import com.n8n.mobile.studio.runtime.EmbeddedRuntime
+import com.n8n.mobile.studio.runtime.NodeRuntime
+import com.n8n.mobile.studio.runtime.PayloadException
+import com.n8n.mobile.studio.runtime.PayloadProblem
+import com.n8n.mobile.studio.runtime.PreparedRuntime
+import com.n8n.mobile.studio.runtime.RuntimeInstaller
+import com.n8n.mobile.studio.runtime.RuntimeManifest
 import com.n8n.mobile.studio.runtime.RuntimePaths
-import com.n8n.mobile.studio.runtime.RuntimeState
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * The embedded OpenCode runtime: a local coding agent with a GUI surface, a
+ * terminal surface and access to the app-owned project tree.
+ *
+ * If the payload build could not produce a Bionic-runnable bundle, [prepare]
+ * fails with [PayloadProblem.NOT_PACKAGED] and the UI says so. That is the
+ * deliberate alternative to quietly pointing the "GUI" at a remote service.
+ */
 class OpenCodeRuntime(
+    private val paths: RuntimePaths,
+    private val installer: RuntimeInstaller,
+    private val node: NodeRuntime,
+    private val manifest: RuntimeManifest,
     private val config: OpenCodeConfig = OpenCodeConfig(),
-    private val process: OpenCodeProcess = OpenCodeProcess(config),
-    private val health: OpenCodeHealth = OpenCodeHealth(),
 ) : EmbeddedRuntime {
 
-    override val component = EmbeddedComponent.OPENCODE
+    override val component: EmbeddedComponent = EmbeddedComponent.OPENCODE
 
-    private val state = RuntimeState(component).apply {
-        update { it.copy(endpoint = config.endpoint) }
-    }
+    private val process = OpenCodeProcess(node, paths, config)
 
-    private fun root(context: Context): File = File(RuntimePaths.data(context), config.rootFolder)
+    override fun spec(): ComponentSpec = manifest.spec(component)
 
-    override suspend fun prepare(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
+    /** Projects root handed to the agent (created on demand). */
+    fun projectsRoot(): File = File(paths.projects, config.projectsDir)
+
+    override suspend fun prepare(): Result<PreparedRuntime> = withContext(Dispatchers.IO) {
         runCatching {
-            val dir = root(context)
-            if (!dir.exists() && !dir.mkdirs()) {
-                throw IllegalStateException("Failed to create ${dir.absolutePath}")
-            }
-            state.update { it.copy(message = "OpenCode storage ready") }
-        }
-    }
-
-    override suspend fun start(context: Context): Result<EmbeddedComponentStatus> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                state.update {
-                    it.copy(
-                        state = EmbeddedProcessState.STARTING,
-                        message = "Preparing embedded OpenCode runtime",
-                    )
-                }
-
-                val dir = root(context)
-                if (!dir.exists() && !dir.mkdirs()) {
-                    throw IllegalStateException("Failed to create ${dir.absolutePath}")
-                }
-
-                val pid = process.launch(context).getOrThrow()
-                state.update {
-                    it.copy(
-                        state = EmbeddedProcessState.RUNNING,
-                        pid = pid,
-                        message = "OpenCode runtime running",
-                    )
-                }
-
-                runCatching {
-                    val status = health.check(config)
-                    if (status.reachable) {
-                        state.update { it.copy(message = "OpenCode runtime healthy") }
-                    }
-                }
-
-                state.get()
-            }.onFailure { thrown ->
-                state.update {
-                    it.copy(
-                        state = EmbeddedProcessState.FAILED,
-                        message = thrown.message ?: "OpenCode runtime failed",
-                    )
-                }
-            }
-        }
-
-    override suspend fun stop(): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            state.update {
-                it.copy(
-                    state = EmbeddedProcessState.STOPPED,
-                    pid = null,
-                    message = "OpenCode stopped",
+            val spec = spec()
+            if (!spec.packaged) {
+                throw PayloadException(
+                    PayloadProblem.NOT_PACKAGED,
+                    "OpenCode ${spec.version.ifBlank { OpenCodeVersion.PINNED }} payload is not packaged " +
+                        "in this APK build",
                 )
             }
+            node.missingReason()?.let { throw PayloadException(PayloadProblem.MISSING_FROM_ASSETS, it) }
+            paths.ensure().getOrThrow()
+            projectsRoot().mkdirs()
+
+            val installed = installer.installed(component)
+                ?: throw PayloadException(
+                    PayloadProblem.MISSING_FROM_ASSETS,
+                    "OpenCode payload is not installed on this device",
+                )
+            val entryRelative = spec.entryHint.ifBlank { OpenCodeVersion.ENTRY }
+            val entry = paths.resolveInside(installed.dir, entryRelative)
+            if (!entry.isFile) {
+                throw PayloadException(
+                    PayloadProblem.ENTRY_MISSING,
+                    "OpenCode entry '$entryRelative' is missing from payload ${installed.version}",
+                )
+            }
+
+            val args = spec.args.ifEmpty { OpenCodeVersion.SERVE_ARGS }
+            val launch = process.spec(
+                installed = installed,
+                entryRelative = entryRelative,
+                args = args,
+                heapMb = config.memoryMb,
+                extraEnv = spec.environment,
+            )
+            PreparedRuntime(
+                component = component,
+                launch = launch,
+                endpoint = config.endpoint,
+                version = installed.version,
+                payloadDir = installed.dir,
+            )
         }
     }
-
-    override fun status(): EmbeddedComponentStatus = state.get()
 }

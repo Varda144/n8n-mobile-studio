@@ -1,89 +1,81 @@
 package com.n8n.mobile.studio.runtime.n8n
 
-import android.content.Context
+import com.n8n.mobile.studio.runtime.ComponentSpec
 import com.n8n.mobile.studio.runtime.EmbeddedComponent
-import com.n8n.mobile.studio.runtime.EmbeddedComponentStatus
-import com.n8n.mobile.studio.runtime.EmbeddedProcessState
 import com.n8n.mobile.studio.runtime.EmbeddedRuntime
-import com.n8n.mobile.studio.runtime.RuntimeState
+import com.n8n.mobile.studio.runtime.NodeRuntime
+import com.n8n.mobile.studio.runtime.PayloadException
+import com.n8n.mobile.studio.runtime.PayloadProblem
+import com.n8n.mobile.studio.runtime.PreparedRuntime
+import com.n8n.mobile.studio.runtime.RuntimeInstaller
+import com.n8n.mobile.studio.runtime.RuntimeManifest
+import com.n8n.mobile.studio.runtime.RuntimePaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * The embedded n8n runtime.
+ *
+ * Scope: full local n8n, GUI only (its own editor served on loopback, opened in
+ * the in-app WebView or any browser on the device), no tunnel and no external
+ * n8n server. Everything n8n writes goes to [N8nStorage] inside the app sandbox.
+ */
 class N8nRuntime(
+    private val paths: RuntimePaths,
+    private val installer: RuntimeInstaller,
+    private val node: NodeRuntime,
+    private val manifest: RuntimeManifest,
     private val config: N8nConfig = N8nConfig(),
-    private val storage: N8nStorage? = null,
-    private val process: N8nProcess = N8nProcess(config),
-    private val health: N8nHealth = N8nHealth(),
 ) : EmbeddedRuntime {
 
-    override val component = EmbeddedComponent.N8N
+    override val component: EmbeddedComponent = EmbeddedComponent.N8N
 
-    private val state = RuntimeState(component).apply {
-        update { it.copy(endpoint = config.endpoint) }
-    }
+    private val storage = N8nStorage(paths, config)
+    private val process = N8nProcess(node, paths, config)
 
-    private var resolvedStorage: N8nStorage? = null
+    override fun spec(): ComponentSpec = manifest.spec(component)
 
-    private fun storage(context: Context): N8nStorage =
-        resolvedStorage ?: (storage ?: N8nStorage(context, config)).also { resolvedStorage = it }
-
-    override suspend fun prepare(context: Context): Result<Unit> = withContext(Dispatchers.IO) {
+    override suspend fun prepare(): Result<PreparedRuntime> = withContext(Dispatchers.IO) {
         runCatching {
-            storage(context).ensure().getOrThrow()
-            state.update { it.copy(message = "n8n storage ready") }
-        }
-    }
-
-    override suspend fun start(context: Context): Result<EmbeddedComponentStatus> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                state.update {
-                    it.copy(
-                        state = EmbeddedProcessState.STARTING,
-                        message = "Preparing embedded n8n runtime",
-                    )
-                }
-
-                storage(context).ensure().getOrThrow()
-
-                val pid = process.launch(context).getOrThrow()
-                state.update {
-                    it.copy(
-                        state = EmbeddedProcessState.RUNNING,
-                        pid = pid,
-                        message = "n8n runtime running",
-                    )
-                }
-
-                runCatching {
-                    val status = health.check(config)
-                    if (status.reachable) {
-                        state.update { it.copy(message = "n8n runtime healthy") }
-                    }
-                }
-
-                state.get()
-            }.onFailure { thrown ->
-                state.update {
-                    it.copy(
-                        state = EmbeddedProcessState.FAILED,
-                        message = thrown.message ?: "n8n runtime failed",
-                    )
-                }
-            }
-        }
-
-    override suspend fun stop(): Result<Unit> = withContext(Dispatchers.IO) {
-        runCatching {
-            state.update {
-                it.copy(
-                    state = EmbeddedProcessState.STOPPED,
-                    pid = null,
-                    message = "n8n stopped",
+            val spec = spec()
+            if (!spec.packaged) {
+                throw PayloadException(
+                    PayloadProblem.NOT_PACKAGED,
+                    "n8n ${spec.version.ifBlank { N8nVersion.PINNED }} payload is not packaged in this APK build",
                 )
             }
+            node.missingReason()?.let { throw PayloadException(PayloadProblem.MISSING_FROM_ASSETS, it) }
+            storage.ensure().getOrThrow()
+
+            val installed = installer.installed(component)
+                ?: throw PayloadException(
+                    PayloadProblem.MISSING_FROM_ASSETS,
+                    "n8n payload is not installed on this device",
+                )
+            val entryRelative = spec.entryHint.ifBlank { N8nVersion.ENTRY }
+            val entry = paths.resolveInside(installed.dir, entryRelative)
+            if (!entry.isFile) {
+                throw PayloadException(
+                    PayloadProblem.ENTRY_MISSING,
+                    "n8n entry '$entryRelative' is missing from payload ${installed.version}",
+                )
+            }
+
+            val launch = process.spec(
+                installed = installed,
+                entryRelative = entryRelative,
+                args = spec.args,
+                heapMb = config.memoryMb,
+            )
+            PreparedRuntime(
+                component = component,
+                launch = launch,
+                endpoint = config.endpoint,
+                version = installed.version,
+                payloadDir = installed.dir,
+            )
         }
     }
 
-    override fun status(): EmbeddedComponentStatus = state.get()
+    fun storage(): N8nStorage = storage
 }
