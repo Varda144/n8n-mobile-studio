@@ -1,0 +1,14 @@
+name: Security Checks
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for common committed secrets
+        run: |
+          if grep -RInE '(X-N8N-API-KEY|api[_-]?key|password|secret|token).{0,30}=' --exclude-dir=.git --exclude='*.md' . | grep -v 'BuildConfig\|keyAlias\|keyPassword'; then
+            echo 'Potential secret-like assignment found; review before merging.'
+            exit 1
+          fi
+          if find . -type f \( -name '*.jks' -o -name '*.keystore' \) -not -path './.git/*' | grep -q .; then exit 1; fi
