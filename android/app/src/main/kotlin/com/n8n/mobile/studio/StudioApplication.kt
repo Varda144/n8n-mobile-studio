@@ -49,11 +49,14 @@ class StudioApplication : Application() {
 
         val env = AndroidRuntimeEnv(this)
         Logger.i(TAG, "app start: package=${env.packageName()} version=${env.appVersionName()} abis=${env.abis}")
+        val node = env.node()
         Logger.i(
             TAG,
-            "native libs: launcher=${env.node().launcher() != null} lib=${env.node().library() != null} " +
-                "dir=${env.nativeLibraryDir.absolutePath}",
+            "node engine: abi=${node.abi() ?: "unsupported"} available=${node.isAvailable()} " +
+                "binary=${node.binary()?.absolutePath ?: "absent"} " +
+                "missing=${node.missingLibraries().ifEmpty { listOf("none") }.joinToString(",")}",
         )
+        node.missingReason()?.let { Logger.w(TAG, "node engine not runnable: $it") }
     }
 
     override fun onTrimMemory(level: Int) {

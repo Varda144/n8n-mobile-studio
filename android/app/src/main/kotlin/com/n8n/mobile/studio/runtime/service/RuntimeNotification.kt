@@ -36,6 +36,10 @@ class RuntimeNotification(private val context: Context) {
             description = "Local n8n and OpenCode runtimes"
             setShowBadge(false)
             enableVibration(false)
+            // A channel that can never make a sound is what keeps the ongoing
+            // runtime notification silent; Notification.Builder.setSilent() is a
+            // system API and is not part of the public SDK.
+            setSound(null, null)
         }
         manager.createNotificationChannel(channel)
     }
@@ -47,8 +51,8 @@ class RuntimeNotification(private val context: Context) {
             .setContentText(summary(statuses, preparing))
             .setStyle(Notification.BigTextStyle().bigText(details(statuses, preparing)))
             .setOngoing(true)
-            .setSilent(true)
             .setOnlyAlertOnce(true)
+            .setDefaults(0)
             .setContentIntent(openAppIntent())
 
         statuses.forEach { status -> builder.addAction(toggleAction(status)) }
