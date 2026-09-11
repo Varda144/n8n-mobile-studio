@@ -7,6 +7,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.n8n.mobile.studio.domain.N8nInstance
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 private val Context.instanceDataStore by preferencesDataStore("instances")
