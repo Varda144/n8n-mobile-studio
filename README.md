@@ -19,6 +19,8 @@ N8N Mobile Studio is a native Kotlin/Jetpack Compose Android client for managing
 
 Push to `main` or run the workflows manually from the Actions tab. The debug workflow produces an APK artifact. Release signing uses GitHub Secrets only when configured.
 
+The supported development workflow does not require an Android SDK or Android Studio on the phone.
+
 ## Runtime security
 
 API keys are stored using an AES-GCM key generated in the Android Keystore. Secrets are never intended for source control or CI logs. Destructive and high-risk actions are modeled through `RiskLevel` and must be confirmed by the UI before implementation of the action path.
