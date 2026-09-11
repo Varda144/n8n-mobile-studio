@@ -3,7 +3,8 @@
 # An APK build on one of the branches listed below also builds the embedded
 # runtimes by running scripts/prepare-runtime.sh before assets and native
 # libraries are merged (see docs/RUNTIME_PAYLOADS.md). That cross-compiles Node
-# for Android and packages n8n, so it takes tens of minutes; everything else stays
-# fast, and the app then reports NOT_PACKAGED for the missing runtimes instead of
-# pretending they exist.
+# for Android and packages n8n, so it takes tens of minutes; other branches keep
+# building fast, and the app then reports NOT_PACKAGED for the missing runtimes
+# instead of pretending they exist.
+arena/01a09062-n8n-mobile-studio
 main

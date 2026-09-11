@@ -76,7 +76,7 @@ rm -rf "$WORK"; mkdir -p "$STAGE"
 OPENCODE_REF="${OPENCODE_REF:-dev}"
 SRC="$WORK/src"
 info "cloning anomalyco/opencode@$OPENCODE_REF"
-if ! git clone --depth 1 --branch "$OPENCODE_REF" https://github.com/anomalyco/opencode "$SRC" >"$LOG_DIR/opencode-clone.log" 2>&1; then
+if ! timeout "${OPENCODE_CLONE_TIMEOUT:-300}" git clone --depth 1 --branch "$OPENCODE_REF" https://github.com/anomalyco/opencode "$SRC" >"$LOG_DIR/opencode-clone.log" 2>&1; then
     write_unavailable "cannot clone anomalyco/opencode@$OPENCODE_REF ($(tail -n 1 "$LOG_DIR/opencode-clone.log" 2>/dev/null))"
     exit 0
 fi
@@ -99,21 +99,21 @@ if [ -z "$BUN_BIN" ]; then
         BUN_BIN="$(command -v bun)"
     else
         info "installing the Bun toolchain used for bundling (host only; never shipped)"
-        npm install --prefix "$WORK/tools" --no-audit --no-fund bun >"$LOG_DIR/opencode-bun-install.log" 2>&1 || true
+        timeout 300 npm install --prefix "$WORK/tools" --no-audit --no-fund bun >"$LOG_DIR/opencode-bun-install.log" 2>&1 || true
         BUN_BIN="$WORK/tools/node_modules/.bin/bun"
     fi
 fi
 [ -x "$BUN_BIN" ] || { write_unavailable "the Bun bundler could not be installed; bundling without it is not supported by this script yet"; exit 0; }
 
 info "installing workspace dependencies"
-( cd "$SRC" && "$BUN_BIN" install --frozen-lockfile >"$LOG_DIR/opencode-install.log" 2>&1 ) \
-    || ( cd "$SRC" && "$BUN_BIN" install >"$LOG_DIR/opencode-install.log" 2>&1 ) \
+( cd "$SRC" && timeout "${OPENCODE_INSTALL_TIMEOUT:-1200}" "$BUN_BIN" install --frozen-lockfile >"$LOG_DIR/opencode-install.log" 2>&1 ) \
+    || ( cd "$SRC" && timeout "${OPENCODE_INSTALL_TIMEOUT:-1200}" "$BUN_BIN" install >"$LOG_DIR/opencode-install.log" 2>&1 ) \
     || { write_unavailable "bun install failed in the pinned checkout ($(tail -n 1 "$LOG_DIR/opencode-install.log" 2>/dev/null))"; exit 0; }
 ok "dependencies installed"
 
 info "bundling $SERVER_ENTRY for Node"
 BUNDLE="$WORK/server.js"
-if ! ( cd "$SRC" && "$BUN_BIN" build "$SERVER_ENTRY" --target=node --outfile="$BUNDLE" --external 'bun*' --minify-whitespace ) >"$LOG_DIR/opencode-bundle.log" 2>&1; then
+if ! ( cd "$SRC" && timeout "${OPENCODE_BUNDLE_TIMEOUT:-600}" "$BUN_BIN" build "$SERVER_ENTRY" --target=node --outfile="$BUNDLE" --external 'bun*' --minify-whitespace ) >"$LOG_DIR/opencode-bundle.log" 2>&1; then
     write_unavailable "bundling the server for Node failed ($(tail -n 2 "$LOG_DIR/opencode-bundle.log" 2>/dev/null | tr '\n' ' '))"
     exit 0
 fi

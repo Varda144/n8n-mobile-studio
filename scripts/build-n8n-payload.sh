@@ -67,7 +67,9 @@ export npm_config_platform=android
 export npm_config_ignore_scripts=true
 export npm_config_loglevel=warn
 
-NATIVE_REQUIRED=(better-sqlite3 sqlite3)
+# `sqlite3` (node-sqlite3, a dependency of n8n) is what n8n uses for DB_TYPE=sqlite;
+# it has no prebuilt Android binary, so it must be cross-compiled here.
+NATIVE_REQUIRED=(sqlite3)
 NATIVE_FOUND=()
 mapfile -t NATIVE_FOUND < <(
     find "$STAGE/node_modules" -maxdepth 5 -name binding.gyp -printf '%h\n' 2>/dev/null \
@@ -96,8 +98,15 @@ if [ ${#NATIVE_FOUND[@]} -gt 0 ]; then
         fi
     done
 else
-    warn "no native modules found; n8n may fall back to a pure-JS driver"
+    die "no native module found in the n8n tree: DB_TYPE=sqlite cannot work without one"
 fi
+
+for MODULE in "${NATIVE_REQUIRED[@]}"; do
+    printf '%s\n' "${NATIVE_FOUND[@]}" | grep -qx "$MODULE" \
+        || die "required native module '$MODULE' is not present in the n8n tree; the payload would fail at runtime"
+    find "$STAGE/node_modules" -path "*${MODULE}*" -name '*.node' -print -quit | grep -q . \
+        || die "required native module '$MODULE' produced no compiled binary for $ABI"
+done
 
 # Remove platform-specific prebuilds for every OS we are not shipping.
 find "$STAGE/node_modules" -type d \( \

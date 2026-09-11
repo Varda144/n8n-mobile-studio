@@ -72,6 +72,12 @@ android {
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     buildFeatures { compose true; buildConfig true }
+    androidResources {
+        // Runtime payloads are zips of compressed content; compressing them again
+        // saves nothing measurable and would hide their length from
+        // AssetManager.openFd(), which the installer uses for its space check.
+        noCompress += ['zip']
+    }
     packaging {
         resources.excludes += '/META-INF/{AL2.0,LGPL2.1}'
         // The embedded Node engine (jniLibs/<abi>/libnode.so) must be extracted to
