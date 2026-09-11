@@ -4,12 +4,15 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -23,23 +26,74 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toIntOffset
+import androidx.compose.ui.text.font.FontWeight
+import com.n8n.mobile.studio.ui.BrutalistAction
+import com.n8n.mobile.studio.ui.StudioPalette
+import com.n8n.mobile.studio.ui.spatialGridBackground
 import kotlin.math.roundToInt
 
 @Composable
 fun EditorScreen(onBack: () -> Unit) {
     var zoom by remember { mutableFloatStateOf(1f) }
     var nodeOffset by remember { mutableStateOf(Offset(160f, 220f)) }
-    Scaffold(topBar = { TopAppBar(title = { Text("Workflow Editor") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } }, actions = { IconButton(onClick = {}) { Icon(Icons.Default.Save, null) } }) }, floatingActionButton = { FloatingActionButton(onClick = { zoom = (zoom + .1f).coerceAtMost(2.5f) }) { Text("+") } }) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding).background(Color(0xFF0B1020)).pointerInput(Unit) { detectDragGestures { change, drag -> change.consume(); nodeOffset += drag } }) {
+
+    Scaffold(
+        containerColor = StudioPalette.Background,
+        topBar = {
+            TopAppBar(
+                title = { Text("WORKFLOW EDITOR", fontWeight = FontWeight.Black) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") } },
+                actions = { IconButton(onClick = {}) { Icon(Icons.Default.Save, "Save") } },
+            )
+        },
+        floatingActionButton = {
+            BrutalistAction(
+                onClick = { zoom = (zoom + .1f).coerceAtMost(2.5f) },
+                background = StudioPalette.Accent,
+            ) { Text("ZOOM +", fontWeight = FontWeight.Black) }
+        },
+    ) { padding ->
+        Box(
+            Modifier.fillMaxSize()
+                .padding(padding)
+                .background(StudioPalette.Background)
+                .spatialGridBackground()
+                .pointerInput(Unit) {
+                    detectDragGestures { change, drag ->
+                        change.consume()
+                        nodeOffset += drag
+                    }
+                },
+        ) {
             Canvas(Modifier.fillMaxSize()) {
                 val p1 = nodeOffset
                 val p2 = nodeOffset + Offset(260f * zoom, 0f)
-                drawLine(Color(0xFF6EE7B7), p1, p2, 6f)
-                drawCircle(Color(0xFF1F2937), 74f * zoom, p1)
-                drawCircle(Color(0xFF1F2937), 74f * zoom, p2)
+                drawLine(StudioPalette.Primary, p1, p2, 3f)
+                drawCircle(StudioPalette.White, 74f * zoom, p1)
+                drawCircle(StudioPalette.White, 74f * zoom, p2)
+                drawCircle(StudioPalette.Primary, 74f * zoom, p1, style = androidx.compose.ui.graphics.drawscope.Stroke(3f))
+                drawCircle(StudioPalette.Primary, 74f * zoom, p2, style = androidx.compose.ui.graphics.drawscope.Stroke(3f))
             }
-            Text("Webhook", color = Color.White, modifier = Modifier.offset { IntOffset(nodeOffset.x.roundToInt() - 36, nodeOffset.y.roundToInt() - 10) })
-            Text("HTTP Request", color = Color.White, modifier = Modifier.offset { IntOffset((nodeOffset.x + 220f * zoom).roundToInt(), (nodeOffset.y - 10).roundToInt()) })
+
+            Box(
+                Modifier.offset { IntOffset(nodeOffset.x.roundToInt() - 70, nodeOffset.y.roundToInt() - 28) },
+            ) {
+                BrutalistAction(onClick = {}, background = StudioPalette.White) {
+                    Row {
+                        Text("WEBHOOK", fontWeight = FontWeight.Black)
+                        Spacer(Modifier.width(8.dp))
+                        Text("01", color = StudioPalette.Muted, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Box(
+                Modifier.offset { IntOffset((nodeOffset.x + 220f * zoom).roundToInt(), (nodeOffset.y - 28).roundToInt()) },
+            ) {
+                BrutalistAction(onClick = {}, background = StudioPalette.White) {
+                    Text("HTTP REQUEST", fontWeight = FontWeight.Black)
+                }
+            }
         }
     }
 }
