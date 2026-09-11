@@ -40,7 +40,12 @@ class OpenCodeGuiState(private val client: RuntimeClient? = null) {
             ?: status
     }
 
-    fun setProjectsDir(path: String) {
+    /**
+     * The property keeps a private setter, so the value is only ever changed
+     * through this method; naming it `setProjectsDir` would collide with the
+     * property's own JVM setter.
+     */
+    fun updateProjectsDir(path: String) {
         projectsDir = path
     }
 
