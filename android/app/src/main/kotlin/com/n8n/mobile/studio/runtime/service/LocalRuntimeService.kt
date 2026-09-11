@@ -3,6 +3,7 @@ package com.n8n.mobile.studio.runtime.service
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
 import com.n8n.mobile.studio.core.AppConstants
 import com.n8n.mobile.studio.runtime.EmbeddedComponent
@@ -21,11 +22,15 @@ class LocalRuntimeService : Service() {
     override fun onCreate() {
         super.onCreate()
         notification.createChannel()
-        startForeground(
-            AppConstants.NOTIFICATION_ID,
-            notification.build("Local runtime ready"),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
-        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                AppConstants.NOTIFICATION_ID,
+                notification.build("Local runtime ready"),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
+            )
+        } else {
+            startForeground(AppConstants.NOTIFICATION_ID, notification.build("Local runtime ready"))
+        }
         scope.launch { manager.prepare(this@LocalRuntimeService) }
     }
 
