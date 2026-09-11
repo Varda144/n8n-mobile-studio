@@ -85,10 +85,18 @@ for ABI in "${ABIS[@]}"; do
                 warn "android-configure failed: $(tail -n 3 "$LOG_DIR/node-configure-$ABI.log" 2>/dev/null | tr '\n' ' | ')"
                 exit 1
             }
-        if ! make -j "$JOBS" >"$LOG_DIR/node-make-$ABI.log" 2>&1; then
-            annotate_excerpt "node build $ABI error" "$LOG_DIR/node-make-$ABI.log" 4
-            annotate_log_tail "node build $ABI tail" "$LOG_DIR/node-make-$ABI.log" 10
-            warn "make failed: $(log_excerpt "$LOG_DIR/node-make-$ABI.log" 2 | tr '\n' ' | ')"
+        # V=1 keeps the failing compile command in the log: knowing which compiler
+        # and which include paths produced an error is the difference between a
+        # fix and another guess.
+        if ! make -j "$JOBS" V=1 >"$LOG_DIR/node-make-$ABI.log" 2>&1; then
+            FAILING_LOG="$LOG_DIR/node-make-$ABI.log"
+            annotate_excerpt "node build $ABI error" "$FAILING_LOG" 4
+            FAILING_FILE="$(grep -oE '\.\./[^ :]+\.(cc|cpp|c)' "$FAILING_LOG" | head -n 1 || true)"
+            if [ -n "$FAILING_FILE" ]; then
+                annotate_log_matches "node build $ABI command" "$FAILING_LOG" "$(basename "$FAILING_FILE" | sed 's/\./\\./g')" 1
+            fi
+            annotate_log_tail "node build $ABI tail" "$FAILING_LOG" 8
+            warn "make failed: $(log_excerpt "$FAILING_LOG" 2 | tr '\n' ' | ')"
             exit 1
         fi
     ) || die "Node build for $ABI failed (logs in $LOG_DIR/node-*-$ABI.log)"

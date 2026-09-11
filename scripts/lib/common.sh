@@ -106,6 +106,16 @@ log_excerpt() {
         "$log" 2>/dev/null | sed 's/^[0-9]*://' | head -n "$max" || true
 }
 
+# Lines matching a pattern (used to surface the exact compile command of the file
+# that failed, since that is where the include paths and macros are visible).
+annotate_log_matches() {
+    local label="$1" log="$2" pattern="$3" max="${4:-2}" line
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        annotate_error "$label: $(printf '%s' "$line" | cut -c1-800)"
+    done < <(grep -E "$pattern" "$log" 2>/dev/null | head -n "$max")
+}
+
 # The tail of a build log is where the failing command and its message are; it is
 # the fastest way to see a cross-compile problem whose message make reformats.
 annotate_log_tail() {
