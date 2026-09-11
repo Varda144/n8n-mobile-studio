@@ -42,6 +42,6 @@ object AppConstants {
     /** Loopback-only cleartext traffic is whitelisted in network_security_config. */
     const val LOCAL_HTTP_SCHEME = "http"
 
-    /** Env var read by `libnoderun.so` to publish the real OS pid of a runtime. */
+    /** Env var a payload wrapper can use to publish its real OS pid. */
     const val ENV_PIDFILE = "N8N_STUDIO_PIDFILE"
 }

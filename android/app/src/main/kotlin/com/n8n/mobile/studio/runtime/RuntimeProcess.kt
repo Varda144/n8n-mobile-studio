@@ -26,7 +26,8 @@ data class LaunchSpec(
 ) {
     fun commandLine(): List<String> = listOf(executable.absolutePath) + args
 
-    override fun toString(): String = listOf(label) + args.let { if (it.isEmpty()) emptyList() else it }.joinToString(" ")
+    override fun toString(): String =
+        (listOf(label) + args).joinToString(" ")
 }
 
 sealed interface ProcessEvent {
@@ -135,7 +136,10 @@ object RuntimeProcess {
         builder.redirectOutput(stdout)
 
         val handle = builder.start()
-        val pid = waitForPid(spec.pidFile, PID_WAIT_MS) ?: fallbackPid(handle)
+        // The spawned process *is* Node (the engine is packaged as an executable
+        // under nativeLibraryDir), so the OS pid is read straight from the handle.
+        // A pid file is still honoured first for payloads that ship a wrapper.
+        val pid = readPid(spec.pidFile)?.takeIf { isAlive(it) } ?: pidOf(handle)
         onEvent(ProcessEvent.Started(pid, spec.toString()))
 
         val output = FileOutputStream(spec.logFile, true)
@@ -187,7 +191,22 @@ object RuntimeProcess {
         return cmdline.contains(marker)
     }
 
-    /** Wait until the launcher publishes its pid (see `libnoderun.so`). */
+    /**
+     * OS pid of a launched process.
+     *
+     * Reflection keeps this working across Android releases: `Process.pid()` is
+     * not present on every implementation, and the field name differs between
+     * ART and OpenJDK.
+     */
+    fun pidOf(handle: Process): Long? {
+        runCatching { (handle.javaClass.getMethod("pid").invoke(handle) as? Int)?.toLong() }
+            .getOrNull()
+            ?.takeIf { it > 0 }
+            ?.let { return it }
+        return fallbackPid(handle)
+    }
+
+    /** Wait until a wrapper publishes its pid into [pidFile]. */
     fun waitForPid(pidFile: File, timeoutMs: Long = PID_WAIT_MS, pollMs: Long = PID_POLL_MS): Long? {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {

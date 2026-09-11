@@ -75,6 +75,10 @@ data class ComponentSpec(
     val memoryMb: Int = RuntimePins.DEFAULT_NODE_HEAP_MB,
     val entryHint: String = "",
     val integrity: String = "",
+    /** CLI arguments for the entry script, from the packaged manifest. */
+    val args: List<String> = emptyList(),
+    /** Extra process environment from the packaged manifest (never secrets). */
+    val environment: Map<String, String> = emptyMap(),
 )
 
 /**

@@ -248,4 +248,29 @@ eval "set -- $(
         tr '\n' ' '
     )" '"$@"'
 
+# ---------------------------------------------------------------------------
+# n8n-mobile-studio: CI diagnostics
+#
+# This project is developed from a phone, where reading a failed GitHub Actions
+# job log is not always possible. Inside Actions the wrapper therefore tees
+# Gradle's output to a file and republishes compiler/test errors as workflow
+# annotations (`::error::`), which `gh run view` lists without needing the log
+# download endpoint. Local runs behave exactly as before.
+if [ -n "${GITHUB_ACTIONS:-}" ]; then
+    _n8n_log="${RUNNER_TEMP:-/tmp}/gradle-n8n-studio.log"
+    set +e
+    "$JAVACMD" "$@" 2>&1 | tee "$_n8n_log"
+    _n8n_status=${PIPESTATUS[0]}
+    set -e
+    if [ "$_n8n_status" -ne 0 ]; then
+        grep -E "^e: |^w: .*[Ee]rror|error: |What went wrong|Execution failed for task|FAILURE: Build failed|FAILED$" "$_n8n_log" \
+            | head -n 12 \
+            | while IFS= read -r _n8n_line; do
+                printf '::error::%s\n' "$(printf '%s' "$_n8n_line" | tr -d '\r' | cut -c1-900)"
+            done
+        printf '::error::gradle exited with status %s (full log: %s)\n' "$_n8n_status" "$_n8n_log"
+    fi
+    exit "$_n8n_status"
+fi
+
 exec "$JAVACMD" "$@"

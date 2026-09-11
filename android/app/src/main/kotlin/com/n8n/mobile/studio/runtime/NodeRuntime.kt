@@ -7,19 +7,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * The Node.js runtime embedded by this app.
+ * The Node.js engine embedded by this app.
  *
- * The payload build cross-compiles the pinned Node version for Android with
- * `--dest-os=android --shared`, producing two shared objects that ship in the
- * APK's `jniLibs` (the only location Android allows an app to execute from):
+ * `scripts/build-node-android.sh` cross-compiles the pinned Node release for
+ * Android using upstream Node's own Android support (`./android-configure` from
+ * the Node source tree) and packages the resulting executable as
+ * `jniLibs/<abi>/libnode.so`, with the NDK C++ runtime next to it.
  *
- *  - `libnode.so`     — Node itself, built as a shared library;
- *  - `libnoderun.so`  — a ~10 line launcher that calls `node::Start` and writes
- *                       its own pid into `$N8N_STUDIO_PIDFILE`, so the app owns a
- *                       real OS pid for kill/reclaim instead of guessing.
- *
- * Both n8n and OpenCode are plain JavaScript payloads executed by this Node, not
- * separate toolchains. Nothing here executes code from a writable directory.
+ * Packaging it as a native library is not cosmetic: Android only executes app
+ * files that come from the APK's `lib/<abi>/` directory, which is exactly what
+ * `ApplicationInfo.nativeLibraryDir` points at. Nothing here executes code from a
+ * writable directory, and n8n/OpenCode are plain JavaScript payloads run by this
+ * Node — no second toolchain, no remote server.
  */
 class NodeRuntime(
     private val nativeLibraryDir: File,
@@ -27,21 +26,29 @@ class NodeRuntime(
     private val deviceAbis: List<String> = RuntimePins.SUPPORTED_ABIS,
 ) {
 
-    fun launcher(): File? = File(nativeLibraryDir, RuntimePins.NODE_LAUNCHER_LIB).takeIf { it.isFile }
+    /** The Node executable, when the payload build packaged it for this ABI. */
+    fun binary(): File? = File(nativeLibraryDir, RuntimePins.NODE_CORE_LIB).takeIf { it.isFile }
 
-    fun library(): File? = File(nativeLibraryDir, RuntimePins.NODE_CORE_LIB).takeIf { it.isFile }
+    /** Shared libraries the Node binary needs at load time. */
+    fun missingLibraries(): List<String> =
+        RuntimePins.NODE_EXTRA_LIBS.filterNot { File(nativeLibraryDir, it).isFile }
 
     /** The ABI this device will actually run, when the payload covers it. */
     fun abi(): String? = deviceAbis.firstOrNull { RuntimePins.SUPPORTED_ABIS.contains(it) }
 
-    fun isAvailable(): Boolean = launcher() != null && library() != null
+    fun isAvailable(): Boolean = binary() != null && missingLibraries().isEmpty()
 
+    /** Human-readable reason the engine cannot run here, or null when it can. */
     fun missingReason(): String? = when {
-        launcher() == null && library() == null ->
-            "Node runtime missing: neither ${RuntimePins.NODE_LAUNCHER_LIB} nor ${RuntimePins.NODE_CORE_LIB} " +
-                "is packaged for this ABI (${deviceAbis.joinToString(", ")})"
-        library() == null -> "Node runtime incomplete: ${RuntimePins.NODE_CORE_LIB} is missing"
-        launcher() == null -> "Node runtime incomplete: ${RuntimePins.NODE_LAUNCHER_LIB} is missing"
+        binary() == null && missingLibraries().isNotEmpty() ->
+            "Node engine missing: ${RuntimePins.NODE_CORE_LIB} and " +
+                "${missingLibraries().joinToString(", ")} are not packaged for this ABI " +
+                "(${deviceAbis.joinToString(", ")})"
+        binary() == null ->
+            "Node engine missing: ${RuntimePins.NODE_CORE_LIB} is not packaged for this ABI " +
+                "(${deviceAbis.joinToString(", ")})"
+        missingLibraries().isNotEmpty() ->
+            "Node engine incomplete: ${missingLibraries().joinToString(", ")} missing"
         else -> null
     }
 
@@ -69,6 +76,9 @@ class NodeRuntime(
             ).joinToString(":"),
         )
         put("PWD", workingDir.absolutePath)
+        // The engine lives in nativeLibraryDir together with the NDK C++ runtime;
+        // both the dynamic linker (via the binary's $ORIGIN rpath) and these
+        // variables resolve it there.
         put("LD_LIBRARY_PATH", nativeLibraryDir.absolutePath)
         put("NODE_ENV", "production")
         put("NODE_OPTIONS", "--max-old-space-size=$heapMb")
@@ -92,10 +102,10 @@ class NodeRuntime(
         logFile: File = paths.logFile(component),
         pidFile: File = paths.pidFile(component),
     ): LaunchSpec {
-        val launcher = launcher()
+        val engine = binary()
             ?: throw PayloadException(
                 PayloadProblem.MISSING_FROM_ASSETS,
-                missingReason() ?: "Node launcher is not packaged",
+                missingReason() ?: "Node engine is not packaged",
             )
         val env = nodeEnv(
             component = component,
@@ -105,7 +115,7 @@ class NodeRuntime(
         )
         return LaunchSpec(
             component = component,
-            executable = launcher,
+            executable = engine,
             args = listOf(entry.absolutePath) + args,
             workingDir = workingDir,
             env = env,
@@ -116,18 +126,18 @@ class NodeRuntime(
     }
 
     /**
-     * Run `libnoderun.so --version` to prove the packaged Node actually starts on
+     * Run `libnode.so --version` to prove the packaged engine actually starts on
      * this device. Preflight evidence instead of a claim.
      */
     suspend fun probeVersion(timeoutMs: Long = PROBE_TIMEOUT_MS): Result<String> = withContext(Dispatchers.IO) {
         runCatching {
-            val launcher = launcher()
+            val engine = binary()
                 ?: throw PayloadException(
                     PayloadProblem.MISSING_FROM_ASSETS,
-                    missingReason() ?: "Node launcher is not packaged",
+                    missingReason() ?: "Node engine is not packaged",
                 )
             paths.ensure().getOrThrow()
-            val builder = ProcessBuilder(listOf(launcher.absolutePath, "--version"))
+            val builder = ProcessBuilder(listOf(engine.absolutePath, "--version"))
                 .directory(paths.tmp)
                 .redirectErrorStream(true)
             builder.environment().putAll(

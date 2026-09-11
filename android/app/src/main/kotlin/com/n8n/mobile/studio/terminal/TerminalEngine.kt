@@ -255,7 +255,7 @@ class TerminalEngine(
         val ok = if (move) {
             source.renameTo(target)
         } else if (source.isDirectory) {
-            source.copyRecursively(target, overwrite = true).isSuccess
+            source.copyRecursively(target, overwrite = true)
         } else {
             runCatching { source.copyTo(target, overwrite = true) }.isSuccess
         }

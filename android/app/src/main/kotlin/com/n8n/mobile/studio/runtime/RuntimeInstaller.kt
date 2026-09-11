@@ -8,6 +8,8 @@ import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
@@ -78,6 +80,7 @@ class RuntimeInstaller(
             val target = paths.payloadDir(request.component, request.version)
             onProgress(InstallProgress.Finalizing(target.absolutePath))
             val retired = File(paths.payloads, ".retired-${request.component.id}-${now()}")
+            target.parentFile?.mkdirs()
             if (target.exists()) {
                 if (!target.renameTo(retired)) target.deleteRecursively()
             }
@@ -98,7 +101,7 @@ class RuntimeInstaller(
                 origin = source.origin,
             )
             installed.marker.writeText(
-                json.encodeToString(InstalledPayloadMarker.serializer(), installed.toMarker()),
+                json.encodeToString(installed.toMarker()),
             )
             paths.currentPointer(request.component).writeText(request.version)
             prune(request.component)
@@ -110,6 +113,11 @@ class RuntimeInstaller(
                 is ZipException -> PayloadException(
                     PayloadProblem.CORRUPT_ARCHIVE,
                     "Payload archive is not a readable zip: ${t.message}",
+                    t,
+                )
+                is IllegalArgumentException -> PayloadException(
+                    PayloadProblem.UNSAFE_ENTRY,
+                    "Payload archive contains an unsafe path: ${t.message}",
                     t,
                 )
                 else -> PayloadException(PayloadProblem.UNKNOWN, t.message ?: t.javaClass.simpleName, t)
@@ -135,14 +143,14 @@ class RuntimeInstaller(
         val markerFile = File(dir, RuntimePins.INSTALL_MARKER)
         if (!markerFile.isFile) return null
         return runCatching {
-            val marker = json.decodeFromString(InstalledPayloadMarker.serializer(), markerFile.readText())
+            val marker = json.decodeFromString<InstalledPayloadMarker>(markerFile.readText())
             InstalledPayload.fromMarker(component, dir, marker)
         }.getOrNull()
     }
 
     /** Installed versions, newest first. */
     fun versions(component: EmbeddedComponent): List<String> =
-        componentRootVersions(component).sortedDescending()
+        Versions.newestFirst(componentRootVersions(component))
 
     fun delete(component: EmbeddedComponent, version: String): Boolean {
         val dir = paths.payloadDir(component, version)
@@ -152,12 +160,17 @@ class RuntimeInstaller(
         return removed
     }
 
+    /**
+     * Keep the active payload plus the newest `keep - 1` others, so a bad update
+     * can be rolled back while storage stays bounded.
+     */
     fun prune(component: EmbeddedComponent, keep: Int = KEEP_INSTALLS) {
         val current = paths.currentPointer(component).takeIf { it.isFile }?.readText()?.trim()
-        versions(component)
-            .filter { it != current }
-            .drop(keep)
-            .forEach { delete(component, it) }
+        val installed = versions(component)
+        val retained = LinkedHashSet<String>()
+        current?.let(retained::add)
+        installed.filterNot { it == current }.take((keep - 1).coerceAtLeast(0)).forEach(retained::add)
+        installed.filterNot(retained::contains).forEach { delete(component, it) }
         // Drop leftovers from interrupted installs.
         paths.payloads.listFiles()
             ?.filter {
@@ -192,7 +205,7 @@ class RuntimeInstaller(
                 override fun close() = delegate.close()
             }
 
-            val zip = ZipInputStream(counted, DEFAULT_BUFFER_SIZE)
+            val zip = ZipInputStream(counted)
             var entry: ZipEntry? = zip.nextEntry
             while (entry != null) {
                 val name = entry.name

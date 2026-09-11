@@ -1,50 +1,76 @@
 #!/usr/bin/env bash
+# Build the runtime payloads that get embedded in the APK.
+#
+# This is the script `.github/workflows/runtime-build.yml` runs before
+# `assembleDebug`, and it is the only place payloads are produced. It builds:
+#
+#   1. the Node.js engine for Android  -> android/app/src/main/jniLibs/<abi>/libnode.so
+#   2. the n8n JavaScript payload      -> android/app/src/main/assets/runtime/n8n/payload.zip
+#   3. an OpenCode payload, if upstream can be built for Node (otherwise the
+#      runtime stays honestly unpackaged, with the reason recorded)
+#   4. assets/runtime/manifest.json describing exactly what exists
+#
+# Nothing here is committed: payloads and engines are build outputs (see
+# .gitignore) because they are tens of megabytes of pinned third-party code.
+#
+# Environment knobs:
+#   RUNTIME_ABIS="arm64-v8a x86_64"   ABIs to build (default arm64-v8a)
+#   SKIP_NODE_BUILD=1                 reuse an existing jniLibs engine
+#   SKIP_N8N=1 / SKIP_OPENCODE=1      skip one payload
+#   NODE_VERSION, N8N_VERSION, OPENCODE_VERSION, ANDROID_API_LEVEL, ANDROID_NDK_VERSION
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
 
-echo "==> Runtime manifest check"
+ABIS="${RUNTIME_ABIS:-arm64-v8a}"
 
-MANIFEST="$REPO_ROOT/android/app/src/main/assets/runtime/manifest.json"
+info "runtime payload build"
+info "  repo:   $REPO_ROOT"
+info "  node:   $NODE_VERSION (android $ANDROID_API_LEVEL)"
+info "  n8n:    $N8N_VERSION"
+info "  opencode: $OPENCODE_VERSION"
+info "  abis:   $ABIS"
 
-if [ ! -f "$MANIFEST" ]; then
-    echo "ERROR: manifest.json not found at $MANIFEST" >&2
-    exit 1
-fi
+# --------------------------------------------------------------- manifest sanity
+MANIFEST="$MANIFEST" python3 - <<'PY' || die "existing manifest is not readable JSON"
+import json, os
+with open(os.environ["MANIFEST"]) as handle:
+    data = json.load(handle)
+assert data.get("schemaVersion"), "manifest has no schemaVersion"
+PY
+info "existing manifest parses"
 
-if command -v python3 >/dev/null 2>&1; then
-    python3 -c "
-import json, sys
-m = json.load(open('$MANIFEST'))
-for name, r in m.get('runtimes', {}).items():
-    status = 'ENABLED' if r.get('enabled') else 'disabled'
-    packaged = 'packaged' if r.get('packaged') else 'not-packaged'
-    port = r.get('port', '?')
-    print(f'  {name}: {status}, {packaged}, port {port}')
-"
+# ------------------------------------------------------------------- 1. Node
+if [ "${SKIP_NODE_BUILD:-0}" = "1" ]; then
+    info "SKIP_NODE_BUILD=1: keeping the engine already in jniLibs"
+    ls -1 "$JNI_LIBS" 2>/dev/null || warn "no jniLibs directory"
 else
-    echo "  (python3 not available — printing raw)"
-    cat "$MANIFEST"
+    # shellcheck disable=SC2086
+    bash "$SCRIPT_DIR/build-node-android.sh" $ABIS || die "Node engine build failed — no payload will be published"
 fi
 
-echo ""
-echo "==> Gradle wrapper check"
-
-GRADLEW="$REPO_ROOT/android/gradlew"
-WRAPPER_JAR="$REPO_ROOT/android/gradle/wrapper/gradle-wrapper.jar"
-
-if [ ! -f "$GRADLEW" ]; then
-    echo "ERROR: gradlew not found at $GRADLEW" >&2
-    exit 1
+# ------------------------------------------------------------------- 2. n8n
+if [ "${SKIP_N8N:-0}" = "1" ]; then
+    info "SKIP_N8N=1: n8n payload left as-is"
+else
+    N8N_ABI="$(echo "$ABIS" | awk '{print $1}')"
+    bash "$SCRIPT_DIR/build-n8n-payload.sh" "$N8N_ABI" || die "n8n payload build failed"
 fi
 
-if [ ! -f "$WRAPPER_JAR" ]; then
-    echo "ERROR: gradle-wrapper.jar not found at $WRAPPER_JAR" >&2
-    exit 1
+# --------------------------------------------------------------- 3. OpenCode
+if [ "${SKIP_OPENCODE:-0}" = "1" ]; then
+    info "SKIP_OPENCODE=1: OpenCode payload left as-is"
+else
+    bash "$SCRIPT_DIR/build-opencode-payload.sh" || warn "OpenCode payload build did not produce a payload"
 fi
 
-echo "  gradlew: OK"
-echo "  gradle-wrapper.jar: OK"
-echo ""
-echo "==> All checks passed."
+# --------------------------------------------------------------- 4. manifest
+info "regenerating the packaged runtime manifest"
+python3 "$SCRIPT_DIR/generate-runtime-manifest.py" || die "manifest generation failed"
+
+# ------------------------------------------------------------------ 5. verify
+bash "$SCRIPT_DIR/verify-runtime.sh" || die "runtime verification failed"
+
+info "runtime payload build finished"

@@ -1,44 +1,37 @@
 #!/usr/bin/env bash
+# Verify that what the APK claims to embed actually exists, and that it is what
+# the app expects. Run by scripts/prepare-runtime.sh and by the release workflow.
+#
+# This is the honesty gate of the project:
+#   * `packaged: true` requires the payload archive (matching digest, declared
+#     entry point inside it) and, for Node, a real engine binary for every
+#     declared ABI;
+#   * `packaged: false` requires that no stale payload is present, so a build can
+#     never ship a payload the manifest does not describe;
+#   * the pins in RuntimePins.kt (what the Kotlin code targets) must match the
+#     manifest (what was built).
+#
+# Set ALLOW_UNPACKAGED=1 to report unpackaged runtimes as a warning instead of a
+# failure (used by the debug build, which is allowed to ship without payloads).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-MANIFEST="$REPO_ROOT/android/app/src/main/assets/runtime/manifest.json"
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
 
-echo "==> Verify runtime manifest"
+[ -f "$MANIFEST" ] || die "manifest not found at $MANIFEST"
 
-if [ ! -f "$MANIFEST" ]; then
-    echo "ERROR: manifest.json not found at $MANIFEST" >&2
-    exit 1
+REPORT="$LOG_DIR/runtime-verify.txt"
+info "verifying packaged runtimes ($(basename "$MANIFEST"))"
+
+if python3 "$SCRIPT_DIR/lib/verify_manifest.py" "$REPO_ROOT" "$MANIFEST" | tee "$REPORT"; then
+    exit 0
 fi
 
-if command -v python3 >/dev/null 2>&1; then
-    python3 -c "
-import json
-m = json.load(open('$MANIFEST'))
-print(f'Schema version: {m.get(\"schemaVersion\", \"?\")}')
-print(f'Built at:       {m.get(\"builtAt\", \"?\")}')
-print()
-for name, r in m.get('runtimes', {}).items():
-    enabled  = r.get('enabled', False)
-    packaged = r.get('packaged', False)
-    port     = r.get('port', '?')
-    payload  = r.get('payload', '?')
-    print(f'  [{name}]')
-    print(f'    enabled:  {enabled}')
-    print(f'    packaged: {packaged}')
-    print(f'    port:     {port}')
-    print(f'    payload:  {payload}')
-    print()
-"
-else
-    echo "(python3 unavailable — using grep fallback)"
-    echo ""
-    for key in enabled packaged port; do
-        echo "$key values:"
-        grep -o "\"$key\":[^,}]*" "$MANIFEST" || true
-        echo ""
-    done
+if [ "${ALLOW_UNPACKAGED:-0}" = "1" ]; then
+    warn "runtime verification reported problems; continuing because ALLOW_UNPACKAGED=1"
+    grep -E '^(FAIL|  )' "$REPORT" | head -20 || true
+    exit 0
 fi
 
-echo "==> Verification complete."
+die "runtime verification failed (see the annotations above)"

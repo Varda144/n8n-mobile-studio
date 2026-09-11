@@ -228,7 +228,7 @@ fun SettingsScreen() {
                     InfoLine(
                         "node",
                         "packaged=${infoValue.nodePackaged} version=${infoValue.nodeVersion.ifBlank { "?" }} " +
-                            "launcher=${infoValue.nodeLauncherPresent} lib=${infoValue.nodeLibraryPresent}",
+                            "engine=${infoValue.nodeBinaryPresent} libs=${infoValue.nodeLibrariesPresent}",
                     )
                     InfoLine("runtime root", infoValue.runtimeRoot)
                     InfoLine("projects", infoValue.projectsDir)

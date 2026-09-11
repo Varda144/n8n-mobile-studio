@@ -85,7 +85,15 @@ class RuntimePaths(val filesDir: File, val dirName: String = "local-runtime") {
             }
         }
         EmbeddedComponent.entries.forEach { component ->
-            listOf(componentData(component), componentTmp(component), componentHome(component)).forEach { dir ->
+            // componentPayloadRoot matters: activating an install renames the
+            // staging directory into it, and rename() refuses a missing parent.
+            val dirs = listOf(
+                componentData(component),
+                componentTmp(component),
+                componentHome(component),
+                componentPayloadRoot(component),
+            )
+            dirs.forEach { dir ->
                 if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) {
                     throw IllegalStateException("Failed to create ${dir.absolutePath}")
                 }

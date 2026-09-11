@@ -1,0 +1,22 @@
+# Sources type-checked by tools/compile-check/run.sh, relative to the repo root.
+# Keep this list to code that does not need Compose, androidx or the Android SDK
+# beyond the stubs in tools/compile-check/stubs.
+android/app/src/main/kotlin/com/n8n/mobile/studio/core/*.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/domain/models/*.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/runtime/*.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/runtime/n8n/*.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/runtime/opencode/*.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/runtime/android/*.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/terminal/*.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/security/*.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/data/preferences/*.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/data/api/*.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/runtime/service/*.kt
+# Compose state holders (N8nGuiController, OpenCodeGuiState) are compiled by Gradle only.
+android/app/src/main/kotlin/com/n8n/mobile/studio/n8n/N8nApi.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/n8n/N8nController.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/n8n/N8nWebLauncher.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/opencode/OpenCodeController.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/opencode/OpenCodeSession.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/opencode/OpenCodeTerminalBridge.kt
+android/app/src/main/kotlin/com/n8n/mobile/studio/domain/usecases/*.kt

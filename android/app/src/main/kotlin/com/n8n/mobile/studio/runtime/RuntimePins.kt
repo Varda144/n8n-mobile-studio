@@ -22,9 +22,18 @@ object RuntimePins {
     const val N8N_VERSION = "2.38.7"
     const val OPENCODE_VERSION = "1.18.30"
 
-    /** Shared-library names produced by the Android Node cross-build. */
-    const val NODE_LAUNCHER_LIB = "libnoderun.so"
+    /**
+     * Native-library names produced by the Android Node cross-build. The engine
+     * ships as `libnode.so` because Android only executes app files that arrive
+     * through the APK's `lib/<abi>/` directory.
+     */
     const val NODE_CORE_LIB = "libnode.so"
+
+    /** Shared libraries the Node engine loads at start-up (NDK C++ runtime). */
+    val NODE_EXTRA_LIBS: List<String> = listOf("libc++_shared.so")
+
+    /** How the engine is packaged: a self-contained Android executable. */
+    const val NODE_BUILD_FLAVOR = "android-executable"
 
     /**
      * ABIs the runtime build produces. `arm64-v8a` is the primary target;
@@ -33,6 +42,9 @@ object RuntimePins {
      */
     val SUPPORTED_ABIS: List<String> = listOf("arm64-v8a", "x86_64")
     val PRIMARY_ABI: String = "arm64-v8a"
+
+    /** ABIs the release payload must contain for a shippable APK. */
+    val RELEASE_ABIS: List<String> = listOf("arm64-v8a")
 
     /** Payload archive name inside `assets/runtime/<component>/`. */
     const val PAYLOAD_ARCHIVE = "payload.zip"

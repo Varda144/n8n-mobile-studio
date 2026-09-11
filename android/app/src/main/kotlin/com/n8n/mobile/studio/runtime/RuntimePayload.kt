@@ -76,7 +76,47 @@ enum class PayloadProblem {
     OUT_OF_SPACE,
     ENTRY_MISSING,
     ABI_UNAVAILABLE,
+
+    /** The archive tried to write outside its own directory (zip-slip). */
+    UNSAFE_ENTRY,
     UNKNOWN,
+}
+
+/**
+ * Version comparison for installed payloads.
+ *
+ * Payload versions are upstream release versions (semver-ish), so comparing the
+ * numeric segments matters: `1.10.0` is newer than `1.9.0`, and a plain string
+ * sort would pick the wrong payload to keep. Non-numeric segments fall back to a
+ * case-insensitive string compare.
+ */
+object Versions {
+
+    fun compare(left: String, right: String): Int {
+        val a = left.trim().removePrefix("v").split('.', '-', '+')
+        val b = right.trim().removePrefix("v").split('.', '-', '+')
+        for (index in 0 until maxOf(a.size, b.size)) {
+            val x = a.getOrNull(index).orEmpty()
+            val y = b.getOrNull(index).orEmpty()
+            val xNumber = x.toLongOrNull()
+            val yNumber = y.toLongOrNull()
+            val result = when {
+                xNumber != null && yNumber != null -> xNumber.compareTo(yNumber)
+                // A numeric segment outranks a tag (`2.0.0` > `2.0.0-rc.1`), and an
+                // exhausted side is a release where the other has a pre-release tag.
+                xNumber != null -> 1
+                yNumber != null -> -1
+                x.isEmpty() && y.isNotEmpty() -> 1
+                y.isEmpty() && x.isNotEmpty() -> -1
+                else -> x.compareTo(y, ignoreCase = true)
+            }
+            if (result != 0) return result
+        }
+        return 0
+    }
+
+    /** Newest first. */
+    fun newestFirst(versions: List<String>): List<String> = versions.sortedWith { a, b -> compare(b, a) }
 }
 
 class PayloadException(

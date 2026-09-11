@@ -2,6 +2,7 @@ package com.n8n.mobile.studio.runtime
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 
 /**
@@ -39,6 +40,8 @@ data class RuntimeManifest(
             memoryMb = entry?.memoryMb ?: RuntimePins.DEFAULT_NODE_HEAP_MB,
             entryHint = entry?.entry ?: "",
             integrity = entry?.integrity ?: "",
+            args = entry?.args ?: emptyList(),
+            environment = entry?.environment ?: emptyMap(),
         )
     }
 
@@ -111,9 +114,10 @@ data class RuntimeManifest(
 data class NodePayload(
     val version: String = "",
     val distOs: String = "",
-    val shared: Boolean = true,
-    val launcher: String = RuntimePins.NODE_LAUNCHER_LIB,
+    val shared: Boolean = false,
     val library: String = RuntimePins.NODE_CORE_LIB,
+    val flavor: String = RuntimePins.NODE_BUILD_FLAVOR,
+    val extraLibs: List<String> = RuntimePins.NODE_EXTRA_LIBS,
     val source: String = "",
     val packaged: Boolean = false,
     val abis: Map<String, AbiPayload> = emptyMap(),

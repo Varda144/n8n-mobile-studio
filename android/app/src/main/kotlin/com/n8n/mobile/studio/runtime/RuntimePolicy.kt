@@ -34,18 +34,21 @@ data class ComponentRuntime(
 }
 
 sealed interface RuntimeEvent {
-    data class StartRequested(val at: Long) : RuntimeEvent
-    data class StopRequested(val at: Long, val reason: String = "user") : RuntimeEvent
-    data class PayloadResolved(val at: Long, val version: String) : RuntimeEvent
-    data class PayloadMissing(val at: Long, val message: String) : RuntimeEvent
-    data class ProcessStarted(val at: Long, val pid: Long?) : RuntimeEvent
-    data class HealthOk(val at: Long) : RuntimeEvent
-    data class HealthFailed(val at: Long, val detail: String) : RuntimeEvent
-    data class ProcessExited(val at: Long, val exitCode: Int?, val expected: Boolean = false) : RuntimeEvent
+    /** Monotonic-ish timestamp (ms) the event was observed at. */
+    val at: Long
+
+    data class StartRequested(override val at: Long) : RuntimeEvent
+    data class StopRequested(override val at: Long, val reason: String = "user") : RuntimeEvent
+    data class PayloadResolved(override val at: Long, val version: String) : RuntimeEvent
+    data class PayloadMissing(override val at: Long, val message: String) : RuntimeEvent
+    data class ProcessStarted(override val at: Long, val pid: Long?) : RuntimeEvent
+    data class HealthOk(override val at: Long) : RuntimeEvent
+    data class HealthFailed(override val at: Long, val detail: String) : RuntimeEvent
+    data class ProcessExited(override val at: Long, val exitCode: Int?, val expected: Boolean = false) : RuntimeEvent
     /** Something touched the runtime (GUI opened, API call, terminal command). */
-    data class Activity(val at: Long) : RuntimeEvent
-    data class Tick(val at: Long) : RuntimeEvent
-    data class LowMemory(val at: Long, val availMb: Long, val critical: Boolean) : RuntimeEvent
+    data class Activity(override val at: Long) : RuntimeEvent
+    data class Tick(override val at: Long) : RuntimeEvent
+    data class LowMemory(override val at: Long, val availMb: Long, val critical: Boolean) : RuntimeEvent
 }
 
 sealed interface RuntimeAction {
@@ -100,7 +103,7 @@ object RuntimePolicy {
      */
     fun decide(state: ComponentRuntime, event: RuntimeEvent, config: PolicyConfig): PolicyResult {
         val result = when (event) {
-            is RuntimeEvent.StartRequested -> resultOf(onStart(state, event))
+            is RuntimeEvent.StartRequested -> onStart(state, event)
             is RuntimeEvent.StopRequested -> resultOf(onStop(state, event))
             is RuntimeEvent.PayloadResolved -> resultOf(onPayloadResolved(state, event))
             is RuntimeEvent.PayloadMissing -> resultOf(onPayloadMissing(state, event))
@@ -129,25 +132,46 @@ object RuntimePolicy {
         return copy(actions = actions + RuntimeAction.TerminateGracefully)
     }
 
-    private fun onStart(state: ComponentRuntime, event: RuntimeEvent.StartRequested): ComponentRuntime {
+    private fun onStart(state: ComponentRuntime, event: RuntimeEvent.StartRequested): PolicyResult {
         if (!state.payloadReady) {
-            return state.copy(
-                desired = DesiredState.RUNNING,
-                state = EmbeddedProcessState.NOT_INSTALLED,
-                gaveUp = false,
-                consecutiveFailures = 0,
-                message = "Runtime payload not installed — build or import it on this device first",
+            return PolicyResult(
+                state.copy(
+                    desired = DesiredState.RUNNING,
+                    state = EmbeddedProcessState.NOT_INSTALLED,
+                    gaveUp = false,
+                    consecutiveFailures = 0,
+                    message = "Runtime payload not installed — build or import it on this device first",
+                ),
+                emptyList(),
             )
         }
-        return state.copy(
-            desired = DesiredState.RUNNING,
-            state = EmbeddedProcessState.STARTING,
-            gaveUp = false,
-            consecutiveFailures = 0,
-            nextRetryAt = 0,
-            stopDeadlineAt = 0,
-            lastActivityAt = event.at,
-            message = "Starting ${state.component.label} locally",
+        if (state.pid != null) {
+            // Already up (or going down): only re-assert the desired state.
+            return PolicyResult(
+                state.copy(
+                    desired = DesiredState.RUNNING,
+                    gaveUp = false,
+                    consecutiveFailures = 0,
+                    nextRetryAt = 0,
+                    lastActivityAt = event.at,
+                ),
+                emptyList(),
+            )
+        }
+        // Spawn now instead of waiting for the next tick: a user tapping "start"
+        // should see the runtime move immediately.
+        return PolicyResult(
+            state.copy(
+                desired = DesiredState.RUNNING,
+                state = EmbeddedProcessState.STARTING,
+                gaveUp = false,
+                consecutiveFailures = 0,
+                nextRetryAt = 0,
+                stopDeadlineAt = 0,
+                lastActivityAt = event.at,
+                message = "Starting ${state.component.label} locally",
+            ),
+            listOf(RuntimeAction.Spawn),
         )
     }
 

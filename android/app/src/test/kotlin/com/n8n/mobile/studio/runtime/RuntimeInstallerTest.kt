@@ -88,7 +88,8 @@ class RuntimeInstallerTest {
         val payload = zip("../escape.txt" to "nope", "n8n/bin/n8n" to "x")
 
         val problem = runCatching { install(payload) }.exceptionOrNull()
-        assertTrue(problem is IllegalArgumentException, "zip-slip must be rejected: $problem")
+        assertTrue(problem is PayloadException, "zip-slip must be rejected: $problem")
+        assertEquals(PayloadProblem.UNSAFE_ENTRY, (problem as PayloadException).problem)
         assertFalse(File(root, "escape.txt").exists())
         assertFalse(File(paths.root.parentFile, "escape.txt").exists())
     }

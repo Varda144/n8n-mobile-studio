@@ -282,6 +282,9 @@ class RuntimeSupervisor(
         when (event) {
             is ProcessEvent.Started -> scope.launch {
                 log(component, "spawned pid=${event.pid ?: "unknown"} :: ${event.commandLine}")
+                // Persist the pid: after a service restart it is the only way to
+                // reclaim a runtime the previous process left behind.
+                event.pid?.let { pid -> writePidFile(component, pid) }
                 dispatch(component, RuntimeEvent.ProcessStarted(clock(), event.pid))
             }
             is ProcessEvent.Output -> logs.append(
@@ -289,10 +292,24 @@ class RuntimeSupervisor(
             )
             is ProcessEvent.Exited -> scope.launch {
                 processes.remove(component)
+                clearPidFile(component)
                 log(component, "process exited (code=${event.exitCode ?: "signal"})")
                 dispatch(component, RuntimeEvent.ProcessExited(event.at, event.exitCode))
             }
         }
+    }
+
+    private fun writePidFile(component: EmbeddedComponent, pid: Long) {
+        val file = preparedPidFiles[component] ?: return
+        runCatching {
+            file.parentFile?.mkdirs()
+            file.writeText("${'$'}pid\n")
+        }
+    }
+
+    private fun clearPidFile(component: EmbeddedComponent) {
+        val file = preparedPidFiles[component] ?: return
+        runCatching { file.delete() }
     }
 
     private fun terminate(component: EmbeddedComponent, force: Boolean) {

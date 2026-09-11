@@ -23,7 +23,6 @@ import com.n8n.mobile.studio.runtime.MemoryPressure
 import com.n8n.mobile.studio.runtime.MemorySnapshot
 import com.n8n.mobile.studio.runtime.RuntimeLogLine
 import com.n8n.mobile.studio.runtime.RuntimeMemoryPolicy
-import com.n8n.mobile.studio.runtime.RuntimeProcess
 import com.n8n.mobile.studio.runtime.RuntimeLogBuffer
 import com.n8n.mobile.studio.runtime.RuntimePaths
 import com.n8n.mobile.studio.runtime.RuntimeProcess
@@ -254,8 +253,8 @@ class LocalRuntimeService : Service() {
             activeAbi = node.abi(),
             nodePackaged = manifest.node?.packaged ?: false,
             nodeVersion = manifest.node?.version.orEmpty(),
-            nodeLauncherPresent = node.launcher() != null,
-            nodeLibraryPresent = node.library() != null,
+            nodeBinaryPresent = node.binary() != null,
+            nodeLibrariesPresent = node.missingLibraries().isEmpty(),
             nativeLibraryDir = env.nativeLibraryDir.absolutePath,
             runtimeRoot = paths.root.absolutePath,
             projectsDir = paths.projects.absolutePath,
@@ -297,26 +296,48 @@ class LocalRuntimeService : Service() {
     suspend fun installFromAssets(
         component: EmbeddedComponent,
         onProgress: (InstallProgress) -> Unit,
-    ): Result<InstalledPayload> = payloads.installFromAssets(component, onProgress).onSuccess {
-        payloads.invalidate()
-        supervisor.refreshPayload(component, it.version)
-        Logger.i(TAG, "installed ${component.id} payload ${it.version} (${it.sizeBytes} bytes)")
-    }.onFailure {
-        supervisor.refreshPayload(component, null, it.message)
+    ): Result<InstalledPayload> {
+        val result = payloads.installFromAssets(component, onProgress)
+        whenPayloadInstalled(component, result)
+        return result
     }
 
     suspend fun installFromUri(
         component: EmbeddedComponent,
         uri: Uri,
         onProgress: (InstallProgress) -> Unit,
-    ): Result<InstalledPayload> = payloads.installFromUri(component, uri, onProgress).onSuccess {
-        supervisor.refreshPayload(component, it.version)
-    }.onFailure {
-        supervisor.refreshPayload(component, null, it.message)
+    ): Result<InstalledPayload> {
+        val result = payloads.installFromUri(component, uri, onProgress)
+        whenPayloadInstalled(component, result)
+        return result
     }
 
-    fun uninstallPayload(component: EmbeddedComponent): Result<Unit> =
-        payloads.uninstall(component).onSuccess { supervisor.refreshPayload(component, null) }
+    suspend fun uninstallPayload(component: EmbeddedComponent): Result<Unit> {
+        val result = payloads.uninstall(component)
+        result.fold(
+            onSuccess = { supervisor.refreshPayload(component, null) },
+            onFailure = { supervisor.refreshPayload(component, null, it.message) },
+        )
+        return result
+    }
+
+    /** Publish the installed (or missing) payload to the lifecycle state machine. */
+    private suspend fun whenPayloadInstalled(
+        component: EmbeddedComponent,
+        result: Result<InstalledPayload>,
+    ) {
+        result.fold(
+            onSuccess = { installed ->
+                payloads.invalidate()
+                supervisor.refreshPayload(component, installed.version)
+                Logger.i(
+                    TAG,
+                    "installed ${component.id} payload ${installed.version} (${installed.sizeBytes} bytes)",
+                )
+            },
+            onFailure = { error -> supervisor.refreshPayload(component, null, error.message) },
+        )
+    }
 
     suspend fun probeNode(): Result<String> = env.node().probeVersion()
 
@@ -502,8 +523,8 @@ data class RuntimeInfo(
     val activeAbi: String?,
     val nodePackaged: Boolean,
     val nodeVersion: String,
-    val nodeLauncherPresent: Boolean,
-    val nodeLibraryPresent: Boolean,
+    val nodeBinaryPresent: Boolean,
+    val nodeLibrariesPresent: Boolean,
     val nativeLibraryDir: String,
     val runtimeRoot: String,
     val projectsDir: String,
