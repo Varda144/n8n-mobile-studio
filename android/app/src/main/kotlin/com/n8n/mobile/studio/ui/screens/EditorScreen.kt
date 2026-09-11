@@ -25,9 +25,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.font.FontWeight
-import com.n8n.mobile.studio.ui.BrutalistAction
-import com.n8n.mobile.studio.ui.StudioPalette
-import com.n8n.mobile.studio.ui.spatialGridBackground
+import com.n8n.mobile.studio.ui.components.BrutalistAction
+import com.n8n.mobile.studio.ui.theme.StudioPalette
+import com.n8n.mobile.studio.ui.theme.spatialGridBackground
 import kotlin.math.roundToInt
 
 @Composable

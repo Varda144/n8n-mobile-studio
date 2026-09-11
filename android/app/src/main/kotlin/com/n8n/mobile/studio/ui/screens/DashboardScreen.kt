@@ -16,7 +16,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.n8n.mobile.studio.ui.StudioPalette
+import com.n8n.mobile.studio.ui.theme.StudioPalette
 
 @Composable
 fun DashboardScreen(onInstances: () -> Unit, onAi: () -> Unit) {

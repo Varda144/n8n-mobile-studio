@@ -23,12 +23,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
-import com.n8n.mobile.studio.data.InstanceStore
-import com.n8n.mobile.studio.data.api.N8nApi
+import com.n8n.mobile.studio.data.preferences.PreferencesStore
+import com.n8n.mobile.studio.n8n.N8nApi
 import com.n8n.mobile.studio.security.SecureStorage
-import com.n8n.mobile.studio.ui.BrutalistAction
-import com.n8n.mobile.studio.ui.BrutalistSurface
-import com.n8n.mobile.studio.ui.StudioPalette
+import com.n8n.mobile.studio.ui.components.BrutalistAction
+import com.n8n.mobile.studio.ui.components.BrutalistSurface
+import com.n8n.mobile.studio.ui.theme.StudioPalette
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -39,7 +39,7 @@ import kotlinx.serialization.json.jsonPrimitive
 @Composable
 fun WorkflowsScreen(onEditor: () -> Unit) {
     val context = LocalContext.current
-    val store = remember { InstanceStore(context) }
+    val store = remember { PreferencesStore(context) }
     val secure = remember { SecureStorage(context) }
     val api = remember { N8nApi() }
     val scope = rememberCoroutineScope()

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "builtAt": "2026-09-11",
+  "runtimes": {
+    "n8n": {
+      "enabled": true,
+      "packaged": false,
+      "payload": "assets/runtime/n8n/",
+      "port": 5678
+    },
+    "opencode": {
+      "enabled": true,
+      "packaged": false,
+      "payload": "assets/runtime/opencode/",
+      "port": 8765
+    }
+  }
+}

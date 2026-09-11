@@ -1,4 +1,4 @@
-package com.n8n.mobile.studio.domain
+package com.n8n.mobile.studio.domain.models
 
 import org.junit.Assert.assertEquals
 import org.junit.Test

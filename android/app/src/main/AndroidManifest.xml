@@ -6,7 +6,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <application
         android:allowBackup="false"
-        android:label="N8N Mobile Studio"
+        android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.N8NMobileStudio">
         <activity android:name=".MainActivity" android:exported="true">
@@ -16,7 +16,7 @@
             </intent-filter>
         </activity>
         <service
-            android:name=".local.runtime.LocalRuntimeService"
+            android:name=".runtime.service.LocalRuntimeService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
     </application>

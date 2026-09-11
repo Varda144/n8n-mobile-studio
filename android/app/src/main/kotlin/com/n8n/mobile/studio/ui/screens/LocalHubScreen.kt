@@ -24,8 +24,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.n8n.mobile.studio.local.LocalRuntimeConfig
-import com.n8n.mobile.studio.local.LocalRuntimeProbe
+import com.n8n.mobile.studio.core.AppConfig
+import com.n8n.mobile.studio.runtime.RuntimeHealth
 import kotlinx.coroutines.launch
 
 private data class LocalTool(val name: String, val role: String)
@@ -34,17 +34,14 @@ private data class LocalTool(val name: String, val role: String)
 fun LocalHubScreen() {
     val tools = listOf(
         LocalTool("n8n", "Local workflow runtime / automation"),
-        LocalTool("Codex", "Local coding-agent bridge"),
-        LocalTool("OpenCode", "Local coding-agent bridge"),
-        LocalTool("OpenClaw", "Local agent bridge"),
-        LocalTool("Hermes", "Local agent bridge"),
+        LocalTool("OpenCode", "Local coding-agent runtime / terminal"),
         LocalTool("MCP", "Local tools/resources gateway"),
     )
     var status by remember { mutableStateOf("Not checked") }
     var checking by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val probe = remember { LocalRuntimeProbe() }
-    val config = remember { LocalRuntimeConfig() }
+    val probe = remember { RuntimeHealth() }
+    val config = remember { AppConfig() }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -57,7 +54,7 @@ fun LocalHubScreen() {
         Card(Modifier.fillMaxWidth().padding(top = 16.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Text("n8n local runtime", style = MaterialTheme.typography.titleMedium)
-                Text(config.n8nUrl, style = MaterialTheme.typography.bodySmall)
+                Text(config.n8nEndpoint, style = MaterialTheme.typography.bodySmall)
                 Text(status, modifier = Modifier.padding(top = 8.dp))
                 Button(
                     enabled = !checking,
@@ -65,7 +62,7 @@ fun LocalHubScreen() {
                         checking = true
                         status = "Checking localhost…"
                         scope.launch {
-                            val result = probe.probe(config.n8nUrl)
+                            val result = probe.probe(config.n8nEndpoint)
                             status = result.detail
                             checking = false
                         }

@@ -23,9 +23,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.n8n.mobile.studio.data.InstanceStore
-import com.n8n.mobile.studio.data.api.N8nApi
-import com.n8n.mobile.studio.domain.N8nInstance
+import com.n8n.mobile.studio.data.preferences.PreferencesStore
+import com.n8n.mobile.studio.n8n.N8nApi
+import com.n8n.mobile.studio.domain.models.N8nInstance
 import com.n8n.mobile.studio.security.SecureStorage
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -34,7 +34,7 @@ import java.util.UUID
 @Composable
 fun InstancesScreen() {
     val context = LocalContext.current
-    val store = remember { InstanceStore(context) }
+    val store = remember { PreferencesStore(context) }
     val secure = remember { SecureStorage(context) }
     val api = remember { N8nApi() }
     val scope = rememberCoroutineScope()

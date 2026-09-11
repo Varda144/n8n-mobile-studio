@@ -25,7 +25,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.n8n.mobile.studio.ui.StudioPalette
+import com.n8n.mobile.studio.ui.theme.StudioPalette
 import com.n8n.mobile.studio.ui.screens.*
 
 private data class Destination(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
@@ -36,11 +36,11 @@ fun AppNavigation() {
     val backStack by nav.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val items = listOf(
-        Destination("dashboard", "HOME", Icons.Default.Dashboard),
-        Destination("workflows", "FLOWS", Icons.Default.AccountTree),
-        Destination("executions", "RUNS", Icons.Default.PlayArrow),
-        Destination("hub", "LOCAL", Icons.Default.Hub),
-        Destination("settings", "SET", Icons.Default.Settings),
+        Destination(Routes.DASHBOARD, "HOME", Icons.Default.Dashboard),
+        Destination(Routes.WORKFLOWS, "FLOWS", Icons.Default.AccountTree),
+        Destination(Routes.EXECUTIONS, "RUNS", Icons.Default.PlayArrow),
+        Destination(Routes.HUB, "LOCAL", Icons.Default.Hub),
+        Destination(Routes.SETTINGS, "SET", Icons.Default.Settings),
     )
 
     Scaffold(
@@ -79,15 +79,15 @@ fun AppNavigation() {
             }
         },
     ) { padding ->
-        NavHost(navController = nav, startDestination = "dashboard", Modifier.padding(padding)) {
-            composable("dashboard") { DashboardScreen(onInstances = { nav.navigate("instances") }, onAi = { nav.navigate("ai") }) }
-            composable("instances") { InstancesScreen() }
-            composable("workflows") { WorkflowsScreen(onEditor = { nav.navigate("editor") }) }
-            composable("editor") { EditorScreen(onBack = { nav.popBackStack() }) }
-            composable("executions") { ExecutionsScreen() }
-            composable("ai") { AiScreen() }
-            composable("hub") { LocalHubScreen() }
-            composable("settings") { SettingsScreen() }
+        NavHost(navController = nav, startDestination = Routes.DASHBOARD, Modifier.padding(padding)) {
+            composable(Routes.DASHBOARD) { DashboardScreen(onInstances = { nav.navigate(Routes.INSTANCES) }, onAi = { nav.navigate(Routes.AI) }) }
+            composable(Routes.INSTANCES) { InstancesScreen() }
+            composable(Routes.WORKFLOWS) { WorkflowsScreen(onEditor = { nav.navigate(Routes.EDITOR) }) }
+            composable(Routes.EDITOR) { EditorScreen(onBack = { nav.popBackStack() }) }
+            composable(Routes.EXECUTIONS) { ExecutionsScreen() }
+            composable(Routes.AI) { AiScreen() }
+            composable(Routes.HUB) { LocalHubScreen() }
+            composable(Routes.SETTINGS) { SettingsScreen() }
         }
     }
 }
