@@ -1,8 +1,8 @@
 package com.n8n.mobile.studio.ui.navigation
 
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.PlayArrow
@@ -11,10 +11,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.n8n.mobile.studio.ui.screens.AiScreen
 import com.n8n.mobile.studio.ui.screens.DashboardScreen
@@ -30,6 +33,8 @@ private data class Destination(val route: String, val label: String, val icon: a
 @Composable
 fun AppNavigation() {
     val nav = rememberNavController()
+    val backStack by nav.currentBackStackEntryAsState()
+    val currentRoute = backStack?.destination?.route
     val items = listOf(
         Destination("dashboard", "Home", Icons.Default.Dashboard),
         Destination("workflows", "Flows", Icons.Default.AccountTree),
@@ -37,20 +42,21 @@ fun AppNavigation() {
         Destination("hub", "Local", Icons.Default.Hub),
         Destination("settings", "Settings", Icons.Default.Settings),
     )
+
     Scaffold(bottomBar = {
         NavigationBar {
             items.forEach { item ->
                 NavigationBarItem(
-                    selected = false,
-                    onClick = { nav.navigate(item.route) { launchSingleTop = true } },
+                    selected = currentRoute == item.route,
+                    onClick = { nav.navigate(item.route) { launchSingleTop = true; restoreState = true } },
                     icon = { Icon(item.icon, contentDescription = item.label) },
-                    label = { androidx.compose.material3.Text(item.label) }
+                    label = { Text(item.label) }
                 )
             }
         }
     }) { padding ->
         NavHost(navController = nav, startDestination = "dashboard", Modifier.padding(padding)) {
-            composable("dashboard") { DashboardScreen(onInstances = { nav.navigate("instances") }) }
+            composable("dashboard") { DashboardScreen(onInstances = { nav.navigate("instances") }, onAi = { nav.navigate("ai") }) }
             composable("instances") { InstancesScreen() }
             composable("workflows") { WorkflowsScreen(onEditor = { nav.navigate("editor") }) }
             composable("editor") { EditorScreen(onBack = { nav.popBackStack() }) }
