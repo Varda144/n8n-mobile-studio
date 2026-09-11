@@ -61,6 +61,7 @@ for ABI in "${ABIS[@]}"; do
     ARCH="$(abi_to_node_arch "$ABI")"
 
     info "configuring Node for $ABI ($ARCH)"
+    export_android_python
     # android-configure sets CC/CXX to the NDK wrappers, applies the V8 patch
     # needed for Android (trap-handler) and runs ./configure with
     # --dest-os=android. It must be re-run per ABI in a clean out dir.
@@ -71,10 +72,17 @@ for ABI in "${ABIS[@]}"; do
         # `out/` is also what node-gyp reads when cross-compiling native modules
         # against these headers, so it keeps its default name.
         rm -rf "$SRC_DIR/out"
-        ./android-configure patch "$NDK" "$ANDROID_API_LEVEL" "$ARCH" >"$LOG_DIR/node-configure-$ABI.log" 2>&1 \
-            || { warn "android-configure failed:"; tail -n 30 "$LOG_DIR/node-configure-$ABI.log" >&2; exit 1; }
+        # `patch` is a separate invocation: android-configure only applies the
+        # V8 trap-handler patch when it is the sole argument (it exits 1 with a
+        # usage message otherwise).
+        if [ "${SKIP_ANDROID_PATCH:-0}" != "1" ]; then
+            ./android-configure patch >"$LOG_DIR/node-patch-$ABI.log" 2>&1 \
+                || warn "android-configure patch reported failure (continuing): $(tail -n 2 "$LOG_DIR/node-patch-$ABI.log" 2>/dev/null | tr '\n' ' ')"
+        fi
+        ./android-configure "$NDK" "$ANDROID_API_LEVEL" "$ARCH" >"$LOG_DIR/node-configure-$ABI.log" 2>&1 \
+            || { warn "android-configure failed: $(tail -n 3 "$LOG_DIR/node-configure-$ABI.log" 2>/dev/null | tr '\n' ' | ')"; exit 1; }
         make -j "$JOBS" >"$LOG_DIR/node-make-$ABI.log" 2>&1 \
-            || { warn "make failed:"; tail -n 40 "$LOG_DIR/node-make-$ABI.log" >&2; exit 1; }
+            || { warn "make failed: $(tail -n 3 "$LOG_DIR/node-make-$ABI.log" 2>/dev/null | tr '\n' ' | ')"; exit 1; }
     ) || die "Node build for $ABI failed (logs in $LOG_DIR/node-*-$ABI.log)"
 
     BINARY="$SRC_DIR/out/Release/node"

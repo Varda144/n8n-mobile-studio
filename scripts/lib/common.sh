@@ -175,6 +175,31 @@ abi_to_triple() {
     esac
 }
 
+# `android-configure` is a Python shim that only accepts 3.9–3.13 and refuses to
+# run otherwise; runners often ship a newer default. Build a shim directory that
+# exposes an acceptable interpreter under the names the shim looks for, and pass
+# it in PATH so upstream's own logic (including its patch mode) still runs.
+export_android_python() {
+    local candidate version bin
+    for candidate in python3.13 python3.12 python3.11 python3.10 python3.9 python3 python; do
+        bin="$(command -v "$candidate" 2>/dev/null || true)"
+        [ -n "$bin" ] || continue
+        version="$("$bin" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null || true)"
+        case "$version" in
+            3.9|3.10|3.11|3.12|3.13) ANDROID_PYTHON="$bin"; break ;;
+        esac
+    done
+    [ -n "${ANDROID_PYTHON:-}" ] || die "no Python 3.9–3.13 available; node's android-configure cannot run"
+    local shim_dir="$BUILD_DIR/python-shim"
+    rm -rf "$shim_dir"; mkdir -p "$shim_dir"
+    for name in python3.13 python3.12 python3.11 python3.10 python3.9; do
+        ln -sf "$ANDROID_PYTHON" "$shim_dir/$name"
+    done
+    ln -sf "$ANDROID_PYTHON" "$shim_dir/python3"
+    export PATH="$shim_dir:$PATH"
+    info "android-configure will use $ANDROID_PYTHON ($("$ANDROID_PYTHON" -V 2>&1))"
+}
+
 # Export CC/CXX/AR/... so node-gyp (better-sqlite3 for n8n) uses the NDK.
 export_android_toolchain() {
     local abi="$1" ndk="$2"
