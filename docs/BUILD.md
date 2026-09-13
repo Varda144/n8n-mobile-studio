@@ -62,3 +62,21 @@ annotations, visible with `gh run view`.
 
 `runtime-build.yml` (push to `main` or manual dispatch) builds the payloads and
 verifies the manifest without producing an APK.
+
+## Speeding up payload builds (optional)
+
+The Node cross-compile and the n8n install dominate a payload build. Both are
+pinned and deterministic, so caching their outputs turns a rebuild from about an
+hour into a couple of minutes. Applying
+[`docs/ci/node-and-n8n-cache.patch`](ci/node-and-n8n-cache.patch) to
+`.github/workflows/build-debug.yml` does exactly that:
+
+```bash
+git apply docs/ci/node-and-n8n-cache.patch
+```
+
+The patch is kept as a patch rather than applied here because pushing changes to
+`.github/workflows/` requires a token with the `workflows` scope, which the
+automation that maintains this branch does not have. The cache keys include
+`RuntimePins.kt` and the payload build script, so a pin or recipe change misses the
+cache and rebuilds instead of shipping a stale payload.

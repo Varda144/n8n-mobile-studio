@@ -1,0 +1,49 @@
+commit 0d851096e6ab4ee05ec0471f157bbaaa83c0c120
+Author: arena-agent <agent@arena.ai>
+Date:   Sun Sep 13 06:20:33 2026 +0000
+
+    Cache the Node engine and the n8n payload between APK builds
+    
+    Both are pinned and deterministic, so a cache hit removes roughly an hour of
+    cross-compiling from a rebuild; the build steps are skipped when the cache
+    restored their outputs and metadata.
+    
+    Co-authored-by: arena-agent <297053741+arena-agent@users.noreply.github.com>
+
+diff --git a/.github/workflows/build-debug.yml b/.github/workflows/build-debug.yml
+index 9ac25e0..ee16c80 100644
+--- a/.github/workflows/build-debug.yml
++++ b/.github/workflows/build-debug.yml
+@@ -18,9 +18,32 @@ jobs:
+           gradle-version: '8.13'
+       - uses: android-actions/setup-android@v3
+       - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
++      # The payload build cross-compiles Node and installs n8n; both are pinned and
++      # deterministic, so a hit here removes ~an hour from a rebuild.
++      - name: Restore the Node engine
++        id: engine-cache
++        uses: actions/cache@v4
++        with:
++          path: |
++            android/app/src/main/jniLibs
++            .runtime-build/node
++          key: node-engine-v1-${{ runner.os }}-${{ hashFiles('android/app/src/main/kotlin/com/n8n/mobile/studio/runtime/RuntimePins.kt') }}-arm64-v8a
++      - name: Restore the n8n payload
++        id: n8n-cache
++        uses: actions/cache@v4
++        with:
++          path: |
++            android/app/src/main/assets/runtime/n8n
++            .runtime-build/n8n
++          key: n8n-payload-v1-${{ runner.os }}-${{ hashFiles('android/app/src/main/kotlin/com/n8n/mobile/studio/runtime/RuntimePins.kt', 'scripts/build-n8n-payload.sh') }}-arm64-v8a
+       - name: Build debug APK
+         run: gradle --no-daemon --stacktrace :app:assembleDebug
+         working-directory: android
++        env:
++          # A cache hit means those artifacts are already correct for this pin, so
++          # the corresponding build step is skipped rather than repeated.
++          SKIP_NODE_BUILD: ${{ steps.engine-cache.outputs.cache-hit == 'true' && '1' || '0' }}
++          SKIP_N8N: ${{ steps.n8n-cache.outputs.cache-hit == 'true' && '1' || '0' }}
+       - uses: actions/upload-artifact@v4
+         with:
+           name: n8n-mobile-studio-debug
