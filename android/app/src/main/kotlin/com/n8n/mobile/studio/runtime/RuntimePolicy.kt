@@ -22,6 +22,8 @@ data class ComponentRuntime(
     val stopDeadlineAt: Long = 0,
     /** Stamped by the supervisor; when exceeded a starting process is killed. */
     val spawnDeadlineAt: Long = 0,
+    /** How often a live-but-slow start was granted more time (see [RuntimeEvent.SpawnStalled]). */
+    val spawnExtensions: Int = 0,
     val startedAt: Long = 0,
     val lastHealthyAt: Long = 0,
     val lastActivityAt: Long = 0,
@@ -48,6 +50,12 @@ sealed interface RuntimeEvent {
     /** Something touched the runtime (GUI opened, API call, terminal command). */
     data class Activity(override val at: Long) : RuntimeEvent
     data class Tick(override val at: Long) : RuntimeEvent
+    /**
+     * The process is alive but has not answered its health probe yet. Emitted by
+     * the supervisor (which owns the process handle) so the policy can extend the
+     * deadline instead of killing something that is still working.
+     */
+    data class SpawnStalled(override val at: Long) : RuntimeEvent
     data class LowMemory(override val at: Long, val availMb: Long, val critical: Boolean) : RuntimeEvent
 }
 
@@ -64,8 +72,22 @@ data class PolicyConfig(
     val maxBackoffMs: Long = 60_000,
     /** Consecutive failed health probes tolerated before DEGRADED. */
     val healthFailureTolerance: Int = 3,
-    /** Time a process gets to become healthy before it is killed and retried. */
-    val spawnTimeoutMs: Long = 120_000,
+    /**
+     * Time a process gets to become healthy before it is killed and retried.
+     *
+     * 180s is deliberate: n8n runs its database migrations on first start, which on
+     * a phone can take minutes — while the process is perfectly healthy and working.
+     */
+    val spawnTimeoutMs: Long = 180_000,
+    /**
+     * Extra windows granted to a process that is *still alive* past the deadline.
+     *
+     * A large JavaScript runtime can be slow to bind its port after a cold start,
+     * so a process that has not exited is given up to `spawnTimeoutMs *
+     * (maxSpawnExtensions + 1)` in total. A process that died is never given extra
+     * time, and the cap keeps a genuinely wedged runtime from lingering forever.
+     */
+    val maxSpawnExtensions: Int = 5,
     /** Time a stopping process gets before SIGKILL. */
     val stopGraceMs: Long = 8_000,
     /** Stop after this much inactivity once RUNNING (0 disables idle stop). */
@@ -113,6 +135,7 @@ object RuntimePolicy {
             is RuntimeEvent.ProcessExited -> onProcessExited(state, event, config)
             is RuntimeEvent.Activity -> resultOf(state.copy(lastActivityAt = event.at))
             is RuntimeEvent.Tick -> onTick(state, event, config)
+            is RuntimeEvent.SpawnStalled -> resultOf(onSpawnStalled(state, event, config))
             is RuntimeEvent.LowMemory -> onLowMemory(state, event)
         }
         return result.ensureTerminationAction()
@@ -168,6 +191,7 @@ object RuntimePolicy {
                 consecutiveFailures = 0,
                 nextRetryAt = 0,
                 stopDeadlineAt = 0,
+                spawnExtensions = 0,
                 lastActivityAt = event.at,
                 message = "Starting ${state.component.label} locally",
             ),
@@ -341,6 +365,29 @@ object RuntimePolicy {
         return PolicyResult(stopped, listOf(RuntimeAction.TerminateGracefully))
     }
 
+    /**
+     * Extend a live start's deadline, up to [PolicyConfig.maxSpawnExtensions].
+     *
+     * Past the cap the normal timeout path applies, so a wedged-but-alive process
+     * is still killed and retried rather than blocking a start forever.
+     */
+    private fun onSpawnStalled(
+        state: ComponentRuntime,
+        event: RuntimeEvent.SpawnStalled,
+        config: PolicyConfig,
+    ): ComponentRuntime {
+        if (state.state != EmbeddedProcessState.STARTING || state.pid == null) return state
+        if (state.spawnExtensions >= config.maxSpawnExtensions) return state
+        val extensions = state.spawnExtensions + 1
+        return state.copy(
+            spawnExtensions = extensions,
+            spawnDeadlineAt = event.at + config.spawnTimeoutMs,
+            startedAt = if (state.startedAt == 0L) event.at else state.startedAt,
+            message = "Starting ${state.component.label} (still working, " +
+                "waiting up to ${config.spawnTimeoutMs / 60_000} more min)",
+        )
+    }
+
     private fun onTick(state: ComponentRuntime, event: RuntimeEvent.Tick, config: PolicyConfig): PolicyResult {
         val actions = mutableListOf<RuntimeAction>()
         var next = state
@@ -369,6 +416,9 @@ object RuntimePolicy {
             next.spawnDeadlineAt > 0 &&
             event.at >= next.spawnDeadlineAt
 
+        // Reaching this point means the process either exited, or stayed alive
+        // through every grace window (see onSpawnStalled): a slow start keeps its
+        // deadline in the future, so it is not killed while it is still working.
         if (spawnTimedOut) {
             next = next.copy(
                 state = EmbeddedProcessState.STOPPING,

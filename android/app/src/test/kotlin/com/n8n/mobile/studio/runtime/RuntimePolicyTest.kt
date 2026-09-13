@@ -209,4 +209,83 @@ class RuntimePolicyTest {
         val tick = RuntimePolicy.decide(exited, RuntimeEvent.Tick(120_000), config)
         assertTrue(tick.actions.isEmpty())
     }
+
+    @Test
+    fun `a slow but alive start is given more time instead of being killed`() {
+        // n8n migrates its database on first start; on a phone that can take
+        // minutes while the process is perfectly healthy. Killing it there would
+        // produce a restart loop the user can never get out of.
+        val started = RuntimePolicy.decide(
+            ready(),
+            RuntimeEvent.StartRequested(0),
+            config,
+        ).next.copy(pid = 4242, spawnDeadlineAt = config.spawnTimeoutMs)
+
+        val stalled = RuntimePolicy.decide(started, RuntimeEvent.SpawnStalled(config.spawnTimeoutMs), config)
+        assertTrue(
+            stalled.actions.none { it == RuntimeAction.TerminateForcefully },
+            "a live process must not be killed for being slow",
+        )
+        assertEquals(EmbeddedProcessState.STARTING, stalled.next.state)
+        assertEquals(1, stalled.next.spawnExtensions)
+        assertTrue(
+            stalled.next.spawnDeadlineAt > config.spawnTimeoutMs,
+            "the deadline must move forward, otherwise the next tick kills it",
+        )
+
+        // A tick before the new deadline changes nothing.
+        val tick = RuntimePolicy.decide(stalled.next, RuntimeEvent.Tick(config.spawnTimeoutMs + 1_000), config)
+        assertTrue(tick.actions.none { it == RuntimeAction.TerminateForcefully })
+        assertEquals(EmbeddedProcessState.STARTING, tick.next.state)
+    }
+
+    @Test
+    fun `a start that stays alive through every grace window is eventually killed`() {
+        var state = RuntimePolicy.decide(ready(), RuntimeEvent.StartRequested(0), config)
+            .next.copy(pid = 4242, spawnDeadlineAt = config.spawnTimeoutMs)
+        var now = config.spawnTimeoutMs
+
+        repeat(config.maxSpawnExtensions) {
+            state = RuntimePolicy.decide(state, RuntimeEvent.SpawnStalled(now), config).next
+            now = state.spawnDeadlineAt
+        }
+        assertEquals(config.maxSpawnExtensions, state.spawnExtensions)
+
+        // Past the cap the supervisor stops asking for more time, so the deadline
+        // runs out and the wedged process is reclaimed.
+        state = state.copy(spawnDeadlineAt = now)
+        val timedOut = RuntimePolicy.decide(state, RuntimeEvent.Tick(now), config)
+        assertEquals(EmbeddedProcessState.STOPPING, timedOut.next.state)
+        assertTrue(timedOut.actions.contains(RuntimeAction.TerminateForcefully))
+    }
+
+    @Test
+    fun `a process that exited is not given extra time`() {
+        val started = RuntimePolicy.decide(ready(), RuntimeEvent.StartRequested(0), config)
+            .next.copy(pid = 4242, spawnDeadlineAt = config.spawnTimeoutMs)
+
+        // The supervisor only asks for an extension while the process is alive, so
+        // the deadline path is what a dead process sees.
+        val timedOut = RuntimePolicy.decide(started, RuntimeEvent.Tick(config.spawnTimeoutMs + 1), config)
+        assertEquals(EmbeddedProcessState.STOPPING, timedOut.next.state)
+        assertTrue(timedOut.actions.contains(RuntimeAction.TerminateForcefully))
+    }
+
+    @Test
+    fun `a restart request clears the grace windows`() {
+        val stalled = RuntimePolicy.decide(
+            RuntimePolicy.decide(ready(), RuntimeEvent.StartRequested(0), config)
+                .next.copy(pid = 4242, spawnDeadlineAt = config.spawnTimeoutMs),
+            RuntimeEvent.SpawnStalled(config.spawnTimeoutMs),
+            config,
+        ).next
+        assertEquals(1, stalled.spawnExtensions)
+
+        val restarted = RuntimePolicy.decide(
+            stalled.copy(state = EmbeddedProcessState.STOPPED, pid = null),
+            RuntimeEvent.StartRequested(stalled.spawnDeadlineAt + 1),
+            config,
+        ).next
+        assertEquals(0, restarted.spawnExtensions, "a fresh start must get the full grace budget")
+    }
 }

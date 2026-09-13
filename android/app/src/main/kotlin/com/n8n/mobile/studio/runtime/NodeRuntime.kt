@@ -91,6 +91,12 @@ class NodeRuntime(
         putAll(extra)
     }
 
+    /**
+     * The engine plus a `node` entry in the runtime `bin/`, so processes spawned
+     * by a payload (n8n's task runners) can find the engine by name.
+     */
+    fun ensureEngineOnPath(): File? = binary()?.let { engine -> paths.ensureNodeShim(engine) }
+
     /** Build the launch description for a component entry script. */
     fun launchSpec(
         component: EmbeddedComponent,
@@ -107,6 +113,9 @@ class NodeRuntime(
                 PayloadProblem.MISSING_FROM_ASSETS,
                 missingReason() ?: "Node engine is not packaged",
             )
+        // Both runtimes are started for real at this point, so make sure anything
+        // they spawn can find `node` by name (see ensureNodeShim).
+        ensureEngineOnPath()
         val env = nodeEnv(
             component = component,
             heapMb = heapMb,

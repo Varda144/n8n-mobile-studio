@@ -58,6 +58,9 @@ class RuntimePaths(val filesDir: File, val dirName: String = "local-runtime") {
     /** The engine preload that writes the process pid (see [RuntimePins.NODE_PID_PRELOAD]). */
     fun pidPreload(): File = File(bin, RuntimePins.NODE_PID_PRELOAD)
 
+    /** A `node` entry in `bin/`, so child processes can find the engine by name. */
+    fun nodeShim(): File = File(bin, "node")
+
     fun componentTmp(component: EmbeddedComponent): File = File(tmp, component.id)
 
     fun componentHome(component: EmbeddedComponent): File = File(home, component.id)
@@ -118,6 +121,32 @@ class RuntimePaths(val filesDir: File, val dirName: String = "local-runtime") {
             script.writeText(PID_PRELOAD_SOURCE)
         }
         script
+    }.getOrNull()
+
+    /**
+     * Write a `node` executable that runs the packaged engine, and return it.
+     *
+     * The app starts the engine directly, but n8n itself spawns helpers (task
+     * runners, code-node execution) that look up `node` on `PATH`. Android refuses
+     * to execute scripts from app storage directly, hence the explicit
+     * `/system/bin/sh` interpreter and the absolute engine path: the script is
+     * read by the system shell, which then execs the engine from the directory
+     * Android allows execution in.
+     */
+    fun ensureNodeShim(engine: File): File? = runCatching {
+        val shim = nodeShim()
+        shim.parentFile?.mkdirs()
+        // The placeholder keeps the engine path out of the Kotlin template (`$` is
+        // meaningful in both languages).
+        val source = """#!/system/bin/sh
+# Written by N8N Mobile Studio: runs the Node engine packaged in this APK.
+exec "<ENGINE>" "${'$'}@"
+""".replace("<ENGINE>", engine.absolutePath)
+        if (!shim.isFile || shim.readText() != source) {
+            shim.writeText(source)
+        }
+        shim.setExecutable(true, true)
+        shim.takeIf { it.isFile && it.canExecute() }
     }.getOrNull()
 
     fun usableSpaceBytes(): Long = root.let { if (it.exists()) it.usableSpace else filesDir.usableSpace }

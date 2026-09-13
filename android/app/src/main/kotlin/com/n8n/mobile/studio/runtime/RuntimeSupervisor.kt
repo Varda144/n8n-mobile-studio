@@ -193,7 +193,25 @@ class RuntimeSupervisor(
     private suspend fun tick() {
         val now = clock()
         EmbeddedComponent.entries.forEach { component ->
-            dispatch(component, RuntimeEvent.Tick(now))
+            val current = runtimes[component]
+            val process = processes[component]
+            val policy = PolicyConfig(idleStopMs = config().idleStopMillis(component))
+            val deadlinePassed = current != null &&
+                current.state == EmbeddedProcessState.STARTING &&
+                current.pid != null &&
+                current.spawnDeadlineAt > 0 &&
+                now >= current.spawnDeadlineAt
+            // A runtime that is alive but slow (n8n migrating its database on a
+            // phone) must not be killed for being slow. Only the supervisor knows
+            // whether the process is still there, so it asks the policy to extend
+            // the deadline instead of letting it time out.
+            if (deadlinePassed && process?.isAlive() == true &&
+                (current?.spawnExtensions ?: 0) < policy.maxSpawnExtensions
+            ) {
+                dispatch(component, RuntimeEvent.SpawnStalled(now))
+            } else {
+                dispatch(component, RuntimeEvent.Tick(now))
+            }
         }
         probeHealth()
     }
