@@ -30,14 +30,16 @@ class RuntimeProcessTest {
     /**
      * A stand-in for the packaged engine. A real runtime is started with a
      * preloaded script that publishes its pid ([LaunchSpec.publishesPid]); the
-     * shell equivalent is `echo $$ > pidfile`, which proves the same path.
+     * shell equivalent is `echo $$ > "$N8N_STUDIO_PIDFILE"`, which exercises the
+     * same path: the payload writes its pid where the app will look for it.
      */
     private fun specFor(paths: RuntimePaths, script: String, publishesPid: Boolean = false): LaunchSpec =
         LaunchSpec(
             component = EmbeddedComponent.N8N,
             executable = File("/bin/sh"),
+            // `\$` keeps Kotlin from interpolating: the shell expands the variable.
             args = if (publishesPid) {
-                listOf("-c", "echo \$\$ > \"$$PID_FILE_ENV\"; $script")
+                listOf("-c", "echo \$\$ > \"\$N8N_STUDIO_PIDFILE\"; $script")
             } else {
                 listOf("-c", script)
             },
@@ -50,8 +52,6 @@ class RuntimeProcessTest {
         )
 
     private companion object {
-        const val N8N_STUDIO_PIDFILE = "N8N_STUDIO_PIDFILE"
-
         /** How the app learns a payload's pid when the platform will not say. */
         const val PID_FILE_ENV = "N8N_STUDIO_PIDFILE"
     }
@@ -109,6 +109,11 @@ class RuntimeProcessTest {
 
         val process = RuntimeProcess.launch(spec, recorder::onEvent).getOrThrow()
         val pid = assertNotNull(process.pid, "a payload that publishes its pid must be reported with it")
+        assertEquals(
+            pid,
+            RuntimeProcess.readPid(spec.pidFile),
+            "the reported pid must be the one the payload published",
+        )
         assertTrue(RuntimeProcess.isAlive(pid), "pid $pid is not alive right after launch")
         assertTrue(
             RuntimeProcess.cmdline(pid).orEmpty().contains("/bin/sh"),
@@ -166,11 +171,33 @@ class RuntimeProcessTest {
         assertEquals(null, RuntimeProcess.readPid(pidFile), "garbage is not a pid")
         pidFile.writeText("-4\n")
         assertEquals(null, RuntimeProcess.readPid(pidFile), "a negative pid is not a pid")
-        pidFile.writeText("  ${ProcessHandle.current().pid()} \n")
-        assertEquals(
-            ProcessHandle.current().pid(),
-            RuntimeProcess.readPid(pidFile),
-            "a real pid with surrounding whitespace must parse",
-        )
+
+        // A real pid, published by a real process the way the payload does it
+        // (ProcessHandle is not part of Android's java.lang).
+        val child = ProcessBuilder("/bin/sh", "-c", "echo \$\$ > \"\$N8N_STUDIO_PIDFILE\"; sleep 30")
+            .directory(paths.tmp)
+            .redirectErrorStream(true)
+            .apply { environment()[PID_FILE_ENV] = pidFile.absolutePath }
+            .start()
+        try {
+            val deadline = System.currentTimeMillis() + 10_000
+            var published: Long? = null
+            while (System.currentTimeMillis() < deadline && published == null) {
+                published = RuntimeProcess.readPid(pidFile)
+                if (published == null) Thread.sleep(25)
+            }
+            val pid = assertNotNull(published, "the child never published its pid")
+            assertTrue(pid > 0)
+            assertTrue(
+                RuntimeProcess.isAlive(pid),
+                "a pid published by a running process must be reported alive (pid=$pid)",
+            )
+            assertTrue(
+                RuntimeProcess.cmdline(pid).orEmpty().contains("sleep 30"),
+                "the pid does not belong to the published command: ${RuntimeProcess.cmdline(pid)}",
+            )
+        } finally {
+            child.destroyForcibly()
+        }
     }
 }
