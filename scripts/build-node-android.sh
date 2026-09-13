@@ -30,6 +30,17 @@ ABIS=("$@")
 
 NDK="$(require_ndk)"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+
+# Node's build runs its own tools (torque, mksnapshot, bytecode generators) on the
+# build machine. android-configure exports only the target CC/CXX, and the make
+# generator takes the host compiler from CC_host/CXX_host — so they are set here
+# explicitly, or host tools can end up compiled by the Android toolchain.
+export CC_host="${CC_host:-$(command -v cc || command -v gcc)}"
+export CXX_host="${CXX_host:-$(command -v c++ || command -v g++)}"
+export LINK_host="${LINK_host:-$CXX_host}"
+export AR_host="${AR_host:-$(command -v ar)}"
+[ -x "$CC_host" ] && [ -x "$CXX_host" ] || die "no host C/C++ compiler found (needed for Node's build tools)"
+info "host toolchain: $CC_host / $CXX_host"
 SRC_DIR="$BUILD_DIR/node-src"
 
 info "Node $NODE_VERSION for Android, ABI(s): ${ABIS[*]}"
@@ -56,6 +67,20 @@ if [ ! -d "$SRC_DIR/.git" ] && [ ! -f "$SRC_DIR/configure.py" ]; then
     fi
 fi
 [ -f "$SRC_DIR/configure.py" ] || die "node source tree at $SRC_DIR is incomplete"
+
+# ---------------------------------------------------------------------------
+# Source patches
+#
+# android-configure applies upstream's own V8 trap-handler patch (below, through
+# its `patch` mode). Bionic needs one more: V8 decides whether <execinfo.h>
+# provides backtrace_symbols() by detecting a glibc-like libc, and Android ships
+# an <execinfo.h> that declares none of those functions. The build then fails
+# deep in V8's stack trace code with three "undeclared identifier" errors and no
+# hint of the cause.
+# ---------------------------------------------------------------------------
+run_step "v8-execinfo-patch" python3 "$SCRIPTS_DIR/lib/patch-v8-execinfo.py" \
+    "$SRC_DIR/deps/v8/src/base/debug/stack_trace_posix.cc" \
+    || die "cannot patch V8's stack trace source for bionic"
 
 for ABI in "${ABIS[@]}"; do
     ARCH="$(abi_to_node_arch "$ABI")"
@@ -88,6 +113,15 @@ for ABI in "${ABIS[@]}"; do
         # V=1 keeps the failing compile command in the log: knowing which compiler
         # and which include paths produced an error is the difference between a
         # fix and another guess.
+        # configure's own exit status is swallowed by android-configure, so the
+        # generated build files are what tells us whether it worked.
+        if [ ! -f "$SRC_DIR/out/Makefile" ] || [ ! -f "$SRC_DIR/config.gypi" ]; then
+            annotate_log_tail "android-configure $ABI" "$LOG_DIR/node-configure-$ABI.log" 10
+            annotate_log_tail "android-configure $ABI patch" "$LOG_DIR/node-patch-$ABI.log" 6
+            die "configure for $ABI produced no out/Makefile or config.gypi"
+        fi
+        ok "configured Node for $ABI"
+
         if ! make -j "$JOBS" V=1 >"$LOG_DIR/node-make-$ABI.log" 2>&1; then
             FAILING_LOG="$LOG_DIR/node-make-$ABI.log"
             annotate_excerpt "node build $ABI error" "$FAILING_LOG" 4

@@ -31,7 +31,9 @@ class Notification private constructor(
         fun setContentText(text: CharSequence?): Builder = apply { this.text = text }
         fun setStyle(style: Style): Builder = this
         fun setOngoing(value: Boolean): Builder = apply { ongoing = value }
-        fun setSilent(value: Boolean): Builder = this
+        // `setSilent` is a system API and is deliberately absent here, exactly as
+        // it is absent from the public SDK the app compiles against.
+        fun setDefaults(value: Int): Builder = this
         fun setOnlyAlertOnce(value: Boolean): Builder = this
         fun setContentIntent(intent: PendingIntent?): Builder = this
         fun addAction(action: Action): Builder = apply { actions.add(action) }
@@ -66,6 +68,7 @@ class NotificationChannel(
 
     fun setShowBadge(value: Boolean) {}
     fun enableVibration(value: Boolean) {}
+    fun setSound(sound: Any?, attributes: Any?) {}
 }
 
 open class NotificationManager {

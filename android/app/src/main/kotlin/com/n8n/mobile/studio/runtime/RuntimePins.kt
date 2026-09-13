@@ -46,6 +46,13 @@ object RuntimePins {
     /** ABIs the release payload must contain for a shippable APK. */
     val RELEASE_ABIS: List<String> = listOf("arm64-v8a")
 
+    /**
+     * Preloaded into the engine (`node --require <script> <entry>`) so the process
+     * publishes its own pid. Android offers no reliable way to read a child's pid
+     * from Java, and the app needs it to reclaim orphans after a service restart.
+     */
+    const val NODE_PID_PRELOAD = "n8n-studio-pid.cjs"
+
     /** Payload archive name inside `assets/runtime/<component>/`. */
     const val PAYLOAD_ARCHIVE = "payload.zip"
 

@@ -55,6 +55,9 @@ class RuntimePaths(val filesDir: File, val dirName: String = "local-runtime") {
 
     fun lockFile(name: String): File = File(run, "runtime-$name.lock")
 
+    /** The engine preload that writes the process pid (see [RuntimePins.NODE_PID_PRELOAD]). */
+    fun pidPreload(): File = File(bin, RuntimePins.NODE_PID_PRELOAD)
+
     fun componentTmp(component: EmbeddedComponent): File = File(tmp, component.id)
 
     fun componentHome(component: EmbeddedComponent): File = File(home, component.id)
@@ -102,6 +105,21 @@ class RuntimePaths(val filesDir: File, val dirName: String = "local-runtime") {
         Unit
     }
 
+    /**
+     * Write the pid preload and return it, or null when [pidFile] cannot be used.
+     *
+     * The script is trivial on purpose: it must not be able to fail in a way that
+     * keeps the runtime from starting. It only writes the pid Node already knows.
+     */
+    fun ensurePidPreload(): File? = runCatching {
+        val script = pidPreload()
+        script.parentFile?.mkdirs()
+        if (!script.isFile || script.readText() != PID_PRELOAD_SOURCE) {
+            script.writeText(PID_PRELOAD_SOURCE)
+        }
+        script
+    }.getOrNull()
+
     fun usableSpaceBytes(): Long = root.let { if (it.exists()) it.usableSpace else filesDir.usableSpace }
 
     private fun sanitize(version: String): String =
@@ -109,6 +127,28 @@ class RuntimePaths(val filesDir: File, val dirName: String = "local-runtime") {
 
     companion object {
         const val DEFAULT_DIR = "local-runtime"
+
+        /**
+         * Kept in sync with [RuntimePins.NODE_PID_PRELOAD]: CommonJS so it can be
+         * preloaded into an ESM or CJS entry, and defensive so a read-only or
+         * missing pid file path never breaks the runtime.
+         */
+        internal const val PID_PRELOAD_SOURCE: String = """// Written by N8N Mobile Studio at runtime start. Publishes this process's pid so
+// the app can reclaim the runtime if Android kills the app without stopping it.
+try {
+  var fs = require('fs');
+  var target = process.env.N8N_STUDIO_PIDFILE;
+  if (target) {
+    fs.mkdirSync(require('path').dirname(target), { recursive: true });
+    fs.writeFileSync(target, String(process.pid));
+  }
+} catch (error) {
+  // Never break the runtime because pid reporting failed.
+  if (process.env.N8N_STUDIO_PIDFILE) {
+    console.error('n8n-studio: could not write pid file: ' + error.message);
+  }
+}
+"""
 
         fun forFilesDir(filesDir: File, dirName: String = DEFAULT_DIR): RuntimePaths =
             RuntimePaths(filesDir, dirName)

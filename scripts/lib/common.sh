@@ -16,6 +16,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SCRIPTS_DIR="$REPO_ROOT/scripts"
 cd "$REPO_ROOT"
 
 # ---------------------------------------------------------------------------
@@ -236,6 +237,7 @@ export_android_python() {
         ln -sf "$ANDROID_PYTHON" "$shim_dir/$name"
     done
     ln -sf "$ANDROID_PYTHON" "$shim_dir/python3"
+    ln -sf "$ANDROID_PYTHON" "$shim_dir/python"
     export PATH="$shim_dir:$PATH"
     info "android-configure will use $ANDROID_PYTHON ($("$ANDROID_PYTHON" -V 2>&1))"
 }

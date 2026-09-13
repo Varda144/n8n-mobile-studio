@@ -113,15 +113,28 @@ class NodeRuntime(
             workingDir = workingDir,
             extra = extraEnv + mapOf(AppConstants.ENV_PIDFILE to pidFile.absolutePath),
         )
+        // Preloading the pid writer keeps argv exactly `node <entry> <args>`, so
+        // the payload sees the command line it expects, while the app still gets a
+        // pid it can trust for orphan reclaiming.
+        val preload = paths.ensurePidPreload()
+        val nodeArgs = buildList {
+            preload?.let {
+                add("--require")
+                add(it.absolutePath)
+            }
+            add(entry.absolutePath)
+            addAll(args)
+        }
         return LaunchSpec(
             component = component,
             executable = engine,
-            args = listOf(entry.absolutePath) + args,
+            args = nodeArgs,
             workingDir = workingDir,
             env = env,
             logFile = logFile,
             pidFile = pidFile,
             label = "${component.label} (node)",
+            publishesPid = preload != null,
         )
     }
 

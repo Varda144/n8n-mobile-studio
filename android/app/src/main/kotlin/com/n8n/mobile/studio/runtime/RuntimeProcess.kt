@@ -23,6 +23,12 @@ data class LaunchSpec(
     val logFile: File,
     val pidFile: File,
     val label: String = executable.name,
+    /**
+     * True when the payload writes its own pid into [pidFile] (the engine preload
+     * does). Java cannot read a child's pid reliably on Android, so this is the
+     * authoritative source when it is available.
+     */
+    val publishesPid: Boolean = false,
 ) {
     fun commandLine(): List<String> = listOf(executable.absolutePath) + args
 
@@ -132,14 +138,22 @@ object RuntimeProcess {
             .redirectErrorStream(true)
         builder.environment().putAll(spec.env)
 
-        val stdout = ProcessBuilder.Redirect.appendTo(spec.logFile)
-        builder.redirectOutput(stdout)
-
+        // Output is pumped (not redirected at the OS level) on purpose: the pump
+        // appends to the log file *and* emits ProcessEvent.Output, which is what
+        // fills the log view and the terminal. Redirecting the child's stdout to
+        // the file here would leave those buffers empty until the process exits.
         val handle = builder.start()
         // The spawned process *is* Node (the engine is packaged as an executable
         // under nativeLibraryDir), so the OS pid is read straight from the handle.
         // A pid file is still honoured first for payloads that ship a wrapper.
-        val pid = readPid(spec.pidFile)?.takeIf { isAlive(it) } ?: pidOf(handle)
+        // Prefer the pid the payload published about itself; fall back to the
+        // platform's view, which is not available on every Android release.
+        val published = if (spec.publishesPid) {
+            waitForPid(spec.pidFile, PID_WAIT_MS, PID_POLL_MS)
+        } else {
+            readPid(spec.pidFile)
+        }
+        val pid = published?.takeIf { isAlive(it) } ?: pidOf(handle)
         onEvent(ProcessEvent.Started(pid, spec.toString()))
 
         val output = FileOutputStream(spec.logFile, true)
@@ -192,17 +206,18 @@ object RuntimeProcess {
     }
 
     /**
-     * OS pid of a launched process.
+     * OS pid of a launched process, when the platform exposes one.
      *
-     * Reflection keeps this working across Android releases: `Process.pid()` is
-     * not present on every implementation, and the field name differs between
-     * ART and OpenJDK.
+     * This is a best-effort fallback: `Process.pid()` exists on the JVM and on
+     * newer Android releases, but the concrete class is package-private, so the
+     * call can be refused. Anything that needs a pid must therefore rely on the
+     * payload publishing it ([LaunchSpec.publishesPid]).
      */
     fun pidOf(handle: Process): Long? {
-        runCatching { (handle.javaClass.getMethod("pid").invoke(handle) as? Int)?.toLong() }
-            .getOrNull()
-            ?.takeIf { it > 0 }
-            ?.let { return it }
+        runCatching {
+            val method = handle.javaClass.getMethod("pid").apply { isAccessible = true }
+            (method.invoke(handle) as? Number)?.toLong()
+        }.getOrNull()?.takeIf { it > 0 }?.let { return it }
         return fallbackPid(handle)
     }
 
