@@ -1,0 +1,1 @@
+-keep class com.n8n.mobile.studio.** { *; }

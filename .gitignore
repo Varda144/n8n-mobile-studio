@@ -4,5 +4,7 @@
 /.idea
 /build
 /app/build
-.DS_Store
-*.log
+/captures
+.externalNativeBuild
+.cxx
+local.properties
