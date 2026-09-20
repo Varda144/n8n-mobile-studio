@@ -51,6 +51,17 @@ GitHub Actions runners have 7 GB RAM; 4 GB for Gradle is safe.
 
 **Fix**: The `gradle/actions/setup-gradle@v4` action handles wrapper downloads. If it fails, pin `gradle-version` explicitly in the action config (already done: `8.13`).
 
+## Every Android workflow fails in `android-actions/setup-android`
+
+GitHub removed Node.js 20 from Actions runners on 2025-09-16, and
+`android-actions/setup-android@v3` declares `using: node20`, so the step fails
+before Gradle runs — with no build log to read, because the build never started.
+Bump the action to `v4` in every workflow that uses it (see
+[`docs/ci/setup-android-node24.patch`](ci/setup-android-node24.patch)). The same
+deprecation applies to `actions/checkout@v4`, `actions/setup-java@v4` and
+`actions/upload-artifact@v4`; they still run today because the runner forces them
+onto Node 24, and they will need v5/v5/v6 next.
+
 ## The APK build fails in `:app:prepareRuntimePayloads`
 
 The payload build reports the reason as a workflow annotation (`gh run view`), so

@@ -1,0 +1,109 @@
+# The Android workflows cannot run until this is applied.
+#
+# GitHub removed Node.js 20 from Actions runners on 2025-09-16, and
+# android-actions/setup-android@v3 declares `using: node20` in its action.yml, so
+# the step now fails before Gradle is reached ("Node.js 20 actions are deprecated...
+# will fail to start"). Every Android workflow in this repository uses that action,
+# which means no APK and no unit tests until it is bumped. v4 is the release that
+# declares node24 and takes the same inputs.
+#
+# It is kept here as a patch because the automation that maintains this repository
+# is not allowed to write to `.github/workflows/`. Apply it with:
+#
+#     git apply docs/ci/setup-android-node24.patch
+#
+# or edit each file by hand: android-actions/setup-android@v3 -> @v4
+#
+# The same applies to actions/checkout@v4, actions/setup-java@v4 and
+# actions/upload-artifact@v4: they still run, because the runner forces them onto
+# Node 24, but they are on the same deprecation path and will need v5/v5/v6.
+
+diff --git a/.github/workflows/build-apk.yml b/.github/workflows/build-apk.yml
+index 51c9581..06c4f7e 100644
+--- a/.github/workflows/build-apk.yml
++++ b/.github/workflows/build-apk.yml
+@@ -11,7 +11,7 @@ jobs:
+       - uses: actions/setup-java@v4
+         with: { distribution: temurin, java-version: '17' }
+       - uses: gradle/actions/setup-gradle@v4
+-      - uses: android-actions/setup-android@v3
++      - uses: android-actions/setup-android@v4
+       - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+       - run: chmod +x android/gradlew && cd android && ./gradlew assembleDebug
+       - uses: actions/upload-artifact@v4
+diff --git a/.github/workflows/build-debug.yml b/.github/workflows/build-debug.yml
+index 9ac25e0..05499aa 100644
+--- a/.github/workflows/build-debug.yml
++++ b/.github/workflows/build-debug.yml
+@@ -16,7 +16,7 @@ jobs:
+       - uses: gradle/actions/setup-gradle@v4
+         with:
+           gradle-version: '8.13'
+-      - uses: android-actions/setup-android@v3
++      - uses: android-actions/setup-android@v4
+       - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+       - name: Build debug APK
+         run: gradle --no-daemon --stacktrace :app:assembleDebug
+diff --git a/.github/workflows/build-release.yml b/.github/workflows/build-release.yml
+index 0faf23e..b927a7f 100644
+--- a/.github/workflows/build-release.yml
++++ b/.github/workflows/build-release.yml
+@@ -8,7 +8,7 @@ jobs:
+       - uses: actions/setup-java@v4
+         with: { distribution: temurin, java-version: '17' }
+       - uses: gradle/actions/setup-gradle@v4
+-      - uses: android-actions/setup-android@v3
++      - uses: android-actions/setup-android@v4
+       - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+       - run: chmod +x android/gradlew && cd android && ./gradlew assembleRelease
+       - uses: actions/upload-artifact@v4
+diff --git a/.github/workflows/lint.yml b/.github/workflows/lint.yml
+index 2561f28..09edea6 100644
+--- a/.github/workflows/lint.yml
++++ b/.github/workflows/lint.yml
+@@ -8,6 +8,6 @@ jobs:
+       - uses: actions/setup-java@v4
+         with: { distribution: temurin, java-version: '17' }
+       - uses: gradle/actions/setup-gradle@v4
+-      - uses: android-actions/setup-android@v3
++      - uses: android-actions/setup-android@v4
+       - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+       - run: chmod +x android/gradlew && cd android && ./gradlew lint
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 2a899ee..7dbb669 100644
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -12,7 +12,7 @@ jobs:
+       - uses: actions/setup-java@v4
+         with: { distribution: temurin, java-version: '17' }
+       - uses: gradle/actions/setup-gradle@v4
+-      - uses: android-actions/setup-android@v3
++      - uses: android-actions/setup-android@v4
+       - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+       - run: chmod +x android/gradlew && cd android && ./gradlew test lint assembleRelease
+       - uses: actions/upload-artifact@v4
+diff --git a/.github/workflows/runtime-build.yml b/.github/workflows/runtime-build.yml
+index 31360b0..18a3f8a 100644
+--- a/.github/workflows/runtime-build.yml
++++ b/.github/workflows/runtime-build.yml
+@@ -20,7 +20,7 @@ jobs:
+         with:
+           gradle-version: '8.13'
+ 
+-      - uses: android-actions/setup-android@v3
++      - uses: android-actions/setup-android@v4
+ 
+       - name: Install SDK components
+         run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+diff --git a/.github/workflows/test.yml b/.github/workflows/test.yml
+index a1ce686..0ec0265 100644
+--- a/.github/workflows/test.yml
++++ b/.github/workflows/test.yml
+@@ -8,6 +8,6 @@ jobs:
+       - uses: actions/setup-java@v4
+         with: { distribution: temurin, java-version: '17' }
+       - uses: gradle/actions/setup-gradle@v4
+-      - uses: android-actions/setup-android@v3
++      - uses: android-actions/setup-android@v4
+       - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+       - run: chmod +x android/gradlew && cd android && ./gradlew test
