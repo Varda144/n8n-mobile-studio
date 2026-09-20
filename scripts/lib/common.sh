@@ -38,6 +38,10 @@ APP_DIR="$REPO_ROOT/android/app/src/main"
 JNI_DIR="$APP_DIR/jniLibs"
 ASSETS_RUNTIME_DIR="$APP_DIR/assets/runtime"
 BUILD_DIR="$REPO_ROOT/.runtime-build"
+# Where a payload archive and its manifest record are written. Overridable so the
+# packaging half of a payload build can be exercised (scripts/selftest-n8n-payload.sh)
+# without touching the archives a real build would ship.
+PAYLOAD_OUT_DIR="${PAYLOAD_OUT_DIR:-}"
 LOG_DIR="${LOG_DIR:-$BUILD_DIR/logs}"
 PAYLOAD_ARCHIVE_NAME="${PAYLOAD_ARCHIVE_NAME:-payload.zip}"
 
@@ -305,7 +309,8 @@ assert_elf_machine() {
 write_meta_json() {
     # write_meta_json <component> <json>
     local component="$1" json="$2"
-    mkdir -p "$BUILD_DIR/$component"
-    printf '%s\n' "$json" >"$BUILD_DIR/$component/meta.json"
-    ok "wrote .runtime-build/$component/meta.json"
+    local dir="${PAYLOAD_META_DIR:-$BUILD_DIR/$component}"
+    mkdir -p "$dir"
+    printf '%s\n' "$json" >"$dir/meta.json"
+    ok "wrote $(realpath --relative-to="$REPO_ROOT" "$dir/meta.json" 2>/dev/null || echo "$dir/meta.json")"
 }

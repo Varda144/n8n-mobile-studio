@@ -16,40 +16,71 @@
 #      invisible to the app, which is the point: no manifest entry, no claim.
 #
 # Usage:
-#   scripts/build-n8n-payload.sh [abi]        # default: $DEFAULT_ABI
+#   scripts/build-n8n-payload.sh [abi]                    # default: $DEFAULT_ABI
+#   scripts/build-n8n-payload.sh [abi] --from-stage <dir> # package an existing tree
+#
+# `--from-stage` skips the npm install and the native cross-compile, so the
+# packaging half of this script — promotion, pruning, the archive and the manifest
+# record — can be exercised on any machine (see scripts/selftest-n8n-payload.sh)
+# and re-run by hand without rebuilding the engine.
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/common.sh"
 
 ABI="${1:-$DEFAULT_ABI}"
 ARCH="$(abi_to_node_arch "$ABI")"
-NDK="$(require_ndk)"
 
-NODE_SRC="$BUILD_DIR/node-src"
-[ -f "$NODE_SRC/out/Release/node" ] || die "build the Node engine first (scripts/build-node-android.sh $ABI): $NODE_SRC/out/Release/node is missing"
-[ -f "$JNI_DIR/$ABI/libnode.so" ] || die "no engine at $JNI_DIR/$ABI/libnode.so"
+FROM_STAGE="${3:-}"
+if [ "${2:-}" = "--from-stage" ]; then
+    [ -n "$FROM_STAGE" ] || die "--from-stage needs a directory"
+    [ -d "$FROM_STAGE" ] || die "no staging tree at $FROM_STAGE"
+    STAGE="$(cd "$FROM_STAGE" && pwd)"
+    WORK="$(dirname "$STAGE")"
+    # Output overrides are required here: a packaging run must never land on the
+    # archive and manifest record that a real build would ship.
+    [ -n "$PAYLOAD_OUT_DIR" ] && [ -n "$PAYLOAD_META_DIR" ] \
+        || die "--from-stage needs PAYLOAD_OUT_DIR and PAYLOAD_META_DIR set, so a test cannot overwrite a real payload"
+    mkdir -p "$PAYLOAD_OUT_DIR" "$PAYLOAD_META_DIR"
+    info "packaging the prepared tree at $STAGE for $ABI"
+else
+    [ -z "${2:-}" ] || die "unknown argument: $2"
 
-WORK="$BUILD_DIR/n8n/work"
-STAGE="$WORK/payload"
-rm -rf "$WORK"
-mkdir -p "$STAGE"
+    NDK="$(require_ndk)"
+    NODE_SRC="$BUILD_DIR/node-src"
+    [ -f "$NODE_SRC/out/Release/node" ] || die "build the Node engine first (scripts/build-node-android.sh $ABI): $NODE_SRC/out/Release/node is missing"
+    [ -f "$JNI_DIR/$ABI/libnode.so" ] || die "no engine at $JNI_DIR/$ABI/libnode.so"
 
-info "n8n $N8N_VERSION payload for $ABI (Node $NODE_VERSION engine)"
+    WORK="$BUILD_DIR/n8n/work"
+    STAGE="$WORK/payload"
+    rm -rf "$WORK"
+    mkdir -p "$STAGE"
 
-# ---------------------------------------------------------------------------
-# 1. Production tree from npm.
-# ---------------------------------------------------------------------------
-run_step "n8n-npm-install" bash -c "
-    cd '$WORK'
-    printf '{\"name\":\"n8n-payload\",\"private\":true}\n' > package.json
-    npm install --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=warn 'n8n@$N8N_VERSION'
-" || die "npm install for n8n@$N8N_VERSION failed (see $LOG_DIR/n8n-npm-install.log)"
+    info "n8n $N8N_VERSION payload for $ABI (Node $NODE_VERSION engine)"
 
-mv "$WORK/node_modules" "$STAGE/node_modules"
-[ -f "$STAGE/node_modules/n8n/bin/n8n" ] || die "n8n package has no bin/n8n entry point"
-ENTRY="node_modules/n8n/bin/n8n"
-# npm needs a package root to rebuild modules inside the staged tree.
-printf '{"name":"n8n-payload","private":true}\n' >"$STAGE/package.json"
-ok "n8n tree installed ($(find "$STAGE" -type f | wc -l) files before prune)"
+    # -----------------------------------------------------------------------
+    # 1. Production tree from npm.
+    # -----------------------------------------------------------------------
+    run_step "n8n-npm-install" bash -c "
+        cd '$WORK'
+        printf '{\"name\":\"n8n-payload\",\"private\":true}\n' > package.json
+        npm install --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=warn 'n8n@$N8N_VERSION'
+    " || die "npm install for n8n@$N8N_VERSION failed (see $LOG_DIR/n8n-npm-install.log)"
+
+    mv "$WORK/node_modules" "$STAGE/node_modules"
+    [ -f "$STAGE/node_modules/n8n/bin/n8n" ] || die "n8n package has no bin/n8n entry point"
+    # npm needs a package root to rebuild modules inside the staged tree.
+    printf '{"name":"n8n-payload","private":true}\n' >"$STAGE/package.json"
+    ok "n8n tree installed ($(find "$STAGE" -type f | wc -l) files before prune)"
+fi
+
+# The entry point, wherever the tree came from: freshly installed from npm it sits in
+# node_modules, and a tree that was already promoted has it at the root.
+if [ -f "$STAGE/n8n/bin/n8n" ]; then
+    ENTRY="n8n/bin/n8n"
+else
+    ENTRY="node_modules/n8n/bin/n8n"
+fi
+[ -f "$STAGE/$ENTRY" ] \
+    || die "the staging tree has no n8n entry point (neither n8n/bin/n8n nor node_modules/n8n/bin/n8n)"
 
 # ---------------------------------------------------------------------------
 # 2. Native modules.
@@ -58,14 +89,16 @@ ok "n8n tree installed ($(find "$STAGE" -type f | wc -l) files before prune)"
 # code in the payload. They are rebuilt from source against the Android engine,
 # never taken from the prebuilt binaries npm would ship for glibc/musl.
 # ---------------------------------------------------------------------------
-export_android_toolchain "$ABI" "$NDK"
-export npm_config_nodedir="$NODE_SRC"
-export npm_config_build_from_source=true
-export npm_config_arch="$(node_arch_to_npm_arch "$ABI")"
-export npm_config_target="$NODE_VERSION"
-export npm_config_platform=android
-export npm_config_ignore_scripts=true
-export npm_config_loglevel=warn
+if [ -z "$FROM_STAGE" ]; then
+    export_android_toolchain "$ABI" "$NDK"
+    export npm_config_nodedir="$NODE_SRC"
+    export npm_config_build_from_source=true
+    export npm_config_arch="$(node_arch_to_npm_arch "$ABI")"
+    export npm_config_target="$NODE_VERSION"
+    export npm_config_platform=android
+    export npm_config_ignore_scripts=true
+    export npm_config_loglevel=warn
+fi
 
 # `sqlite3` (node-sqlite3, a dependency of n8n) is what n8n uses for DB_TYPE=sqlite;
 # it has no prebuilt Android binary, so it must be cross-compiled here.
@@ -81,6 +114,11 @@ mapfile -t NATIVE_FOUND < <(
 if [ ${#NATIVE_FOUND[@]} -gt 0 ]; then
     info "native modules found: ${NATIVE_FOUND[*]}"
     for MODULE in "${NATIVE_FOUND[@]}"; do
+        # Nothing to rebuild when the tree was prepared elsewhere. The assertions
+        # after this loop still refuse a tree whose required modules are missing.
+        if [ -n "$FROM_STAGE" ]; then
+            continue
+        fi
         if run_step "n8n-native-$MODULE" bash -c "
             cd '$STAGE'
             npm rebuild '$MODULE' --build-from-source --nodedir='$NODE_SRC' --arch='$(node_arch_to_npm_arch "$ABI")'
@@ -103,7 +141,7 @@ if [ ${#NATIVE_FOUND[@]} -gt 0 ]; then
         fi
     done
 else
-    die "no native module found in the n8n tree: DB_TYPE=sqlite cannot work without one"
+    die "no native module found in the n8n tree (expected sqlite3, which DB_TYPE=sqlite cannot work without)"
 fi
 
 for MODULE in "${NATIVE_REQUIRED[@]}"; do
@@ -137,9 +175,15 @@ done
 # ---------------------------------------------------------------------------
 if [ -f "$STAGE/node_modules/n8n/bin/n8n" ] && [ ! -d "$STAGE/n8n" ]; then
     mv "$STAGE/node_modules/n8n" "$STAGE/n8n"
+    # ENTRY has to move with the package. Every later step names the entry point —
+    # the prune's sanity check, the archive's self-verification and the manifest the
+    # app reads — and a stale path there means the app is told to launch a file that
+    # the payload does not contain.
+    ENTRY="n8n/bin/n8n"
     ok "promoted node_modules/n8n -> n8n (entry: $ENTRY)"
 fi
-[ -f "$STAGE/$ENTRY" ] || die "expected entry $ENTRY after pruning"
+[ -f "$STAGE/$ENTRY" ] || die "expected entry $ENTRY after promotion"
+PKG_ROOT="$(cd "$(dirname "$STAGE/$ENTRY")/.." && pwd)"
 
 # ---------------------------------------------------------------------------
 # 4. Prune.
@@ -172,14 +216,17 @@ for path in sorted(root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
 print(f"pruned {removed} directories and {files} files")
 PY
 
-# n8n resolves its own version and assets from package.json; strip nothing else.
-printf '%s\n' "$N8N_VERSION" >"$STAGE/node_modules/n8n/.n8n-payload-version"
+# A breadcrumb next to the promoted package, so an installed payload can say which
+# n8n it contains even if someone prunes its package.json by hand.
+printf '%s\n' "$N8N_VERSION" >"$PKG_ROOT/.n8n-payload-version"
 ok "payload staged: $(du -sh "$STAGE" | awk '{print $1}')"
 
 # ---------------------------------------------------------------------------
 # 4. Deterministic zip.
 # ---------------------------------------------------------------------------
-DEST_DIR="$ASSETS_RUNTIME_DIR/n8n"
+# Where the archive lands. A test or a re-packaging run can point this elsewhere,
+# so it can never overwrite the payload a real build would ship by accident.
+DEST_DIR="${PAYLOAD_OUT_DIR:-$ASSETS_RUNTIME_DIR/n8n}"
 mkdir -p "$DEST_DIR"
 ZIP="$DEST_DIR/$PAYLOAD_ARCHIVE_NAME"
 rm -f "$ZIP"
@@ -196,7 +243,7 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         info = zipfile.ZipInfo(rel, date_time=(1980, 1, 1, 0, 0, 0))
         info.compress_type = zipfile.ZIP_DEFLATED
         info.external_attr = (0o644 << 16) | 0o100000
-        if rel.startswith("node_modules/n8n/bin/"):
+        if rel.startswith(("n8n/bin/", "node_modules/n8n/bin/")):
             info.external_attr = (0o755 << 16) | 0o100000
         with open(path, "rb") as fh:
             zf.writestr(info, fh.read(), compresslevel=6)
@@ -224,7 +271,7 @@ PY
 SHA="$(sha256_of "$ZIP")"
 SIZE="$(size_of "$ZIP")"
 UNPACKED="$(du -sb "$STAGE" | awk '{print $1}')"
-INTEGRITY="$(python3 - "$STAGE/node_modules/n8n/package.json" <<'PY'
+INTEGRITY="$(python3 - "$PKG_ROOT/package.json" <<'PY'
 import json, sys
 print(json.load(open(sys.argv[1])).get("version", ""))
 PY
