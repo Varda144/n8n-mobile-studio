@@ -53,6 +53,39 @@ tasks.register("verifyRuntimePayloads", Exec) {
 // Verification must see the payloads the build just produced.
 tasks.named("verifyRuntimePayloads") { mustRunAfter "prepareRuntimePayloads" }
 
+// Report what the APK that was just assembled really contains, from inside the
+// APK: the engine, the payload archives and the manifest it carries have to agree
+// with each other, and with what this build was asked to embed. The report is
+// emitted as annotations, which are readable even when the job log is not.
+// Paths are resolved at configuration time so the closures below touch nothing but
+// java.io.
+def reportApkCandidates = ["debug/app-debug.apk", "release/app-release.apk"]
+    .collect { new File(project.buildDir, "outputs/apk/" + it).absolutePath }
+
+tasks.register("reportRuntimeApk", Exec) {
+    group = "runtime"
+    description = "Reports the embedded runtime artifacts of the built APK."
+    workingDir rootProject.file("..")
+    standardOutput = System.out
+    errorOutput = System.err
+    // A missing or mislabelled runtime is reported as an error annotation, but it
+    // must not fail the build: the upload step runs only on success, and an APK
+    // without one runtime is still the fastest way to see how far the other one
+    // gets on a real device. The app itself never claims such a runtime is
+    // installed, so a partial APK cannot mislead anyone.
+    ignoreExitValue = true
+    onlyIf { buildingPayloads && reportApkCandidates.find { new File(it).isFile() } != null }
+    doFirst {
+        commandLine "python3", "scripts/report-apk-contents.py",
+            reportApkCandidates.find { new File(it).isFile() }, "--require", "node,n8n"
+    }
+}
+
+// Runs even when an earlier task failed, so a partially built APK is still checked.
+tasks.matching { it.name in ["assembleDebug", "assembleRelease"] }.configureEach {
+    finalizedBy "reportRuntimeApk"
+}
+
 tasks.matching {
     it.name in ["mergeDebugAssets", "mergeReleaseAssets", "mergeDebugNativeLibs", "mergeReleaseNativeLibs"]
 }.configureEach {

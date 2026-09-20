@@ -236,8 +236,22 @@ class RuntimeSupervisor(
         }
     }
 
-    private suspend fun dispatch(component: EmbeddedComponent, event: RuntimeEvent) = mutex.withLock {
-        val current = runtimes[component] ?: return@withLock
+    private suspend fun dispatch(component: EmbeddedComponent, event: RuntimeEvent) {
+        // Failure handling is itself an event ("the launch was refused", "the payload
+        // could not be prepared"). The mutex is not reentrant, so those events are
+        // collected while the lock is held and replayed once it is released — a
+        // supervisor that wedged on its own error path would leave the UI stuck in
+        // STARTING forever, which is exactly the state a user cannot recover from.
+        val followUps = mutex.withLock { applyLocked(component, event) }
+        followUps.forEach { followUp -> dispatch(component, followUp) }
+    }
+
+    /** The locked half of [dispatch]: decide, publish, act, and report follow-ups. */
+    private suspend fun applyLocked(
+        component: EmbeddedComponent,
+        event: RuntimeEvent,
+    ): List<RuntimeEvent> {
+        val current = runtimes[component] ?: return emptyList()
         val app = config()
         val policy = PolicyConfig(idleStopMs = app.idleStopMillis(component))
         val result = RuntimePolicy.decide(current, event, policy)
@@ -250,19 +264,53 @@ class RuntimeSupervisor(
         if (result.actions.contains(RuntimeAction.TerminateGracefully) && next.stopDeadlineAt <= 0) {
             next = next.copy(stopDeadlineAt = now + policy.stopGraceMs)
         }
-        if (result.actions.isEmpty() && next == current) return@withLock
+        if (result.actions.isEmpty() && next == current) return emptyList()
 
-        runtimes[component] = next
-        publish(next)
-        logTransition(current, next)
+        // A runtime that dies usually explains itself on its own stderr. The
+        // device cannot attach a debugger and the raw log is a tab away, so the
+        // last thing the process said is folded into the status the UI shows —
+        // a screenshot of the LOCAL tab then carries the real reason.
+        val published = withFailureReason(component, next)
+        runtimes[component] = published
+        publish(published)
+        logTransition(current, published)
 
+        val followUps = mutableListOf<RuntimeEvent>()
         result.actions.forEach { action ->
             when (action) {
-                RuntimeAction.Spawn -> spawn(component)
+                RuntimeAction.Spawn -> spawn(component)?.let(followUps::add)
                 RuntimeAction.TerminateGracefully -> terminate(component, force = false)
                 RuntimeAction.TerminateForcefully -> terminate(component, force = true)
             }
         }
+        return followUps
+    }
+
+    /**
+     * Attaches the tail of the process output to a failure status.
+     *
+     * Only for states the user must act on ([EmbeddedProcessState.FAILED]) and
+     * only when the policy did not already supply a detail, so a healthy or
+     * merely restarting runtime keeps the concise message the policy produced.
+     */
+    private fun withFailureReason(
+        component: EmbeddedComponent,
+        next: ComponentRuntime,
+    ): ComponentRuntime {
+        if (next.state != EmbeddedProcessState.FAILED || next.healthDetail != null) return next
+        val recent = logs.snapshot(component).takeLast(8).filter { it.text.isNotBlank() }
+        val output = recent.filter { it.channel != RuntimeLogLine.Channel.SYSTEM }.takeLast(3)
+        if (output.isNotEmpty()) {
+            val detail = output.joinToString(" | ") { it.text.trim().take(200) }
+            return next.copy(healthDetail = "last output: $detail")
+        }
+        // No output at all: the only explanation is the supervisor's own note
+        // that the process could not be started in the first place.
+        val launchProblem = recent
+            .filter { it.text.startsWith("launch failed") || it.text.startsWith("prepare failed") }
+            .takeLast(1)
+            .joinToString("") { it.text.trim().take(200) }
+        return if (launchProblem.isBlank()) next else next.copy(healthDetail = launchProblem)
     }
 
     private fun logTransition(previous: ComponentRuntime, next: ComponentRuntime) {
@@ -273,25 +321,29 @@ class RuntimeSupervisor(
 
     // ----------------------------------------------------------------- process
 
-    private suspend fun spawn(component: EmbeddedComponent) {
+    /**
+     * Spawn one runtime. Returns the event that must be dispatched for a failure —
+     * never dispatching it here, because this runs with the supervisor lock held.
+     */
+    private suspend fun spawn(component: EmbeddedComponent): RuntimeEvent? {
         val runtime = runtimeFor(component)
         val preparedRuntime = prepared[component]
             ?: runtime.prepare().getOrElse { error ->
                 log(component, "prepare failed: ${error.message}")
-                dispatch(component, RuntimeEvent.PayloadMissing(clock(), error.message ?: "prepare failed"))
-                return
+                return RuntimeEvent.PayloadMissing(clock(), error.message ?: "prepare failed")
             }
         prepared[component] = preparedRuntime
 
         val result = spawner.spawn(preparedRuntime.launch) { event -> onProcessEvent(component, event) }
-        result.fold(
+        return result.fold(
             onSuccess = { managed ->
                 processes[component] = managed
                 preparedPidFiles[component] = preparedRuntime.launch.pidFile
+                null
             },
             onFailure = { error ->
                 log(component, "launch failed: ${error.message}")
-                dispatch(component, RuntimeEvent.ProcessExited(clock(), exitCode = null, expected = false))
+                RuntimeEvent.ProcessExited(clock(), exitCode = null, expected = false)
             },
         )
     }
@@ -321,7 +373,13 @@ class RuntimeSupervisor(
         val file = preparedPidFiles[component] ?: return
         runCatching {
             file.parentFile?.mkdirs()
-            file.writeText("${'$'}pid\n")
+            // The engine publishes its own pid through the preload into this very
+            // file. Never overwrite a pid the payload recorded for a process that
+            // is still alive — ours is a fallback, not an authority.
+            val recorded = RuntimeProcess.readPid(file)
+            if (recorded == null || !RuntimeProcess.isAlive(recorded)) {
+                file.writeText("$pid\n")
+            }
         }
     }
 
