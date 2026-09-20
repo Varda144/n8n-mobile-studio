@@ -71,13 +71,26 @@ fi
 # ---------------------------------------------------------------------------
 # Source patches
 #
-# android-configure applies upstream's own V8 trap-handler patch (below, through
-# its `patch` mode). Bionic needs one more: V8 decides whether <execinfo.h>
-# provides backtrace_symbols() by detecting a glibc-like libc, and Android ships
-# an <execinfo.h> that declares none of those functions. The build then fails
-# deep in V8's stack trace code with three "undeclared identifier" errors and no
-# hint of the cause.
+# Two edits stand between V8 and a bionic build, and both are verified rather
+# than merely attempted — a patch that silently does not apply is worse than no
+# patch at all, because the build then fails somewhere unrelated:
+#
+#  1. V8's WebAssembly trap handler is unsupported on Android. Node ships a patch
+#     for that (`android-configure patch`), but it was written for V8 12 and no
+#     longer applies to V8 13: the file gained Loong64 and RISC-V clauses and the
+#     arm64-simulator clause changed. Left enabled, the arm64-on-x64 host build
+#     links simulator trap-handler code that only exists when the handler is on,
+#     and dies with three undefined references far from the cause.
+#  2. V8 decides <execinfo.h> offers backtrace_symbols() by detecting a glibc-like
+#     libc, and bionic ships an <execinfo.h> that declares none of those functions.
 # ---------------------------------------------------------------------------
+run_step "v8-trap-handler-patch" python3 "$SCRIPTS_DIR/lib/patch-v8-trap-handler.py" \
+    "$SRC_DIR/deps/v8/src/trap-handler/trap-handler.h" \
+    || die "cannot disable V8's trap handler for Android"
+
+grep -q "#define V8_TRAP_HANDLER_SUPPORTED false" "$SRC_DIR/deps/v8/src/trap-handler/trap-handler.h" \
+    || die "V8's trap handler is still enabled; the Android build cannot link"
+
 run_step "v8-execinfo-patch" python3 "$SCRIPTS_DIR/lib/patch-v8-execinfo.py" \
     "$SRC_DIR/deps/v8/src/base/debug/stack_trace_posix.cc" \
     || die "cannot patch V8's stack trace source for bionic"
@@ -87,8 +100,7 @@ for ABI in "${ABIS[@]}"; do
 
     info "configuring Node for $ABI ($ARCH)"
     export_android_python
-    # android-configure sets CC/CXX to the NDK wrappers, applies the V8 patch
-    # needed for Android (trap-handler) and runs ./configure with
+    # android-configure sets CC/CXX to the NDK wrappers and runs ./configure with
     # --dest-os=android. It must be re-run per ABI in a clean out dir.
     (
         cd "$SRC_DIR"
@@ -97,13 +109,9 @@ for ABI in "${ABIS[@]}"; do
         # `out/` is also what node-gyp reads when cross-compiling native modules
         # against these headers, so it keeps its default name.
         rm -rf "$SRC_DIR/out"
-        # `patch` is a separate invocation: android-configure only applies the
-        # V8 trap-handler patch when it is the sole argument (it exits 1 with a
-        # usage message otherwise).
-        if [ "${SKIP_ANDROID_PATCH:-0}" != "1" ]; then
-            ./android-configure patch >"$LOG_DIR/node-patch-$ABI.log" 2>&1 \
-                || warn "android-configure patch reported failure (continuing): $(tail -n 2 "$LOG_DIR/node-patch-$ABI.log" 2>/dev/null | tr '\n' ' ')"
-        fi
+        # No `android-configure patch` here: its trap-handler patch no longer
+        # applies to this V8 (see the source patches above), and it reports success
+        # either way, which is how the failure came to look like a linker problem.
         ./android-configure "$NDK" "$ANDROID_API_LEVEL" "$ARCH" >"$LOG_DIR/node-configure-$ABI.log" 2>&1 \
             || {
                 annotate_log_tail "android-configure $ABI" "$LOG_DIR/node-configure-$ABI.log" 6
@@ -117,7 +125,6 @@ for ABI in "${ABIS[@]}"; do
         # generated build files are what tells us whether it worked.
         if [ ! -f "$SRC_DIR/out/Makefile" ] || [ ! -f "$SRC_DIR/config.gypi" ]; then
             annotate_log_tail "android-configure $ABI" "$LOG_DIR/node-configure-$ABI.log" 10
-            annotate_log_tail "android-configure $ABI patch" "$LOG_DIR/node-patch-$ABI.log" 6
             die "configure for $ABI produced no out/Makefile or config.gypi"
         fi
         ok "configured Node for $ABI"

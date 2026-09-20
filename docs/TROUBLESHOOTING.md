@@ -65,6 +65,13 @@ start there. The usual causes:
   `.runtime-build/logs/n8n-native-<module>.log`. The build refuses to package an
   n8n that cannot open its SQLite database.
 * **`sqlite3` was dropped from the n8n tree.** Same reason.
+* **The engine links with undefined trap-handler or simulator references**
+  (`RegisterDefaultTrapHandler`, `TryHandleSignal`, `v8_internal_simulator_ProbeMemory`).
+  V8's WebAssembly trap handler must be off for Android, and the patch Node ships
+  for that stopped applying in V8 13. `scripts/lib/patch-v8-trap-handler.py` does it
+  directly and verifies the result; if this error appears, the header was not
+  patched — check `.runtime-build/logs/node-make-<abi>.log` and confirm the tree
+  contains `#define V8_TRAP_HANDLER_SUPPORTED false`.
 
 ## The APK builds but the runtimes report NOT_PACKAGED
 
