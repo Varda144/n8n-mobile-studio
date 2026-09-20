@@ -144,6 +144,25 @@ for ABI in "${ABIS[@]}"; do
     install -m 0755 "$BINARY" "$DEST/libnode.so"
     assert_elf_machine "$DEST/libnode.so" "$ABI"
 
+    # Node's build leaves debug sections in, and on arm64 that is most of the file
+    # (~100 MiB vs ~45 MiB stripped). The engine is shipped inside an APK, so the
+    # symbols are pure cost for the user's download and install.
+    STRIP_BIN="${STRIP:-}"
+    if [ -z "$STRIP_BIN" ] || [ ! -x "$STRIP_BIN" ]; then
+        STRIP_BIN="$(find_ndk | xargs -I{} echo "{}/toolchains/llvm/prebuilt/$(ndk_host_tag)/bin/llvm-strip")"
+    fi
+    if [ -x "$STRIP_BIN" ]; then
+        BEFORE="$(size_of "$DEST/libnode.so")"
+        if "$STRIP_BIN" --strip-unneeded "$DEST/libnode.so" 2>"$LOG_DIR/node-strip-$ABI.log"; then
+            AFTER="$(size_of "$DEST/libnode.so")"
+            ok "$ABI: stripped engine $(numfmt --to=iec "$BEFORE" 2>/dev/null || echo "$BEFORE") -> $(numfmt --to=iec "$AFTER" 2>/dev/null || echo "$AFTER")"
+        else
+            warn "stripping the engine for $ABI failed (keeping symbols): $(tail -n 2 "$LOG_DIR/node-strip-$ABI.log" 2>/dev/null | tr '\n' ' ')"
+        fi
+    else
+        warn "no llvm-strip found for the engine; the APK will be considerably larger"
+    fi
+
     # Android's linker runs binaries from lib/<abi>/ with the app's native
     # library path as the first search directory, so a NEEDED libc++_shared.so
     # placed next to the engine is found without LD_LIBRARY_PATH games.

@@ -55,9 +55,24 @@ android/app/src/main/kotlin/com/n8n/mobile/studio/
   `127.0.0.1:8765`; cleartext traffic is permitted only for loopback addresses,
   and `RuntimeHealth` refuses to probe anything else.
 
+Getting the APK onto a phone: [`docs/INSTALL.md`](docs/INSTALL.md).
+
 Details: [`docs/RUNTIME_ARCHITECTURE.md`](docs/RUNTIME_ARCHITECTURE.md),
 [`docs/RUNTIME_PAYLOADS.md`](docs/RUNTIME_PAYLOADS.md),
 [`docs/TERMINAL.md`](docs/TERMINAL.md), [`docs/BUILD.md`](docs/BUILD.md).
+
+## Getting the APK
+
+The APK is built by CI and downloaded from the run (a phone cannot compile it):
+
+1. Actions → the latest **Build Debug APK** run on this branch.
+2. Download the `n8n-mobile-studio-debug` artifact, unzip, install the APK.
+
+On a branch listed in `runtime-payload.request` that APK contains the Node engine
+and the n8n payload; the build verifies its own output
+(`scripts/report-apk-contents.py`) and fails if a runtime it advertises is not
+inside. Otherwise the APK installs and the runtimes report NOT_PACKAGED — the app
+never pretends. Details in [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ## Building the payloads
 
