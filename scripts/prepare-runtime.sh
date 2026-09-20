@@ -26,6 +26,22 @@ source "$SCRIPT_DIR/lib/common.sh"
 
 ABIS="${RUNTIME_ABIS:-arm64-v8a}"
 
+summary() {
+    local outcome="$1" detail="${2:-}"
+    if [ -n "$detail" ]; then
+        bash "$SCRIPTS_DIR/lib/ci-summary.sh" --outcome "$outcome" --detail "$detail" || true
+    else
+        bash "$SCRIPTS_DIR/lib/ci-summary.sh" --outcome "$outcome" || true
+    fi
+}
+
+# Any failure below publishes what went wrong to the run summary before exiting, so
+# the reason is readable in the Actions UI without fetching the job log.
+fail() {
+    summary failure "$1"
+    die "$1"
+}
+
 info "runtime payload build"
 info "  repo:   $REPO_ROOT"
 info "  node:   $NODE_VERSION (android $ANDROID_API_LEVEL)"
@@ -48,7 +64,9 @@ if [ "${SKIP_NODE_BUILD:-0}" = "1" ]; then
     ls -1 "$JNI_LIBS" 2>/dev/null || warn "no jniLibs directory"
 else
     # shellcheck disable=SC2086
-    bash "$SCRIPT_DIR/build-node-android.sh" $ABIS || die "Node engine build failed — no payload will be published"
+    # shellcheck disable=SC2086
+    bash "$SCRIPTS_DIR/build-node-android.sh" $ABIS \
+        || fail "Node engine build failed — no payload will be published (see .runtime-build/logs/node-*.log)"
 fi
 
 # ------------------------------------------------------------------- 2. n8n
@@ -56,21 +74,24 @@ if [ "${SKIP_N8N:-0}" = "1" ]; then
     info "SKIP_N8N=1: n8n payload left as-is"
 else
     N8N_ABI="$(echo "$ABIS" | awk '{print $1}')"
-    bash "$SCRIPT_DIR/build-n8n-payload.sh" "$N8N_ABI" || die "n8n payload build failed"
+    bash "$SCRIPTS_DIR/build-n8n-payload.sh" "$N8N_ABI" \
+        || fail "n8n payload build failed (see .runtime-build/logs/n8n-*.log)"
 fi
 
 # --------------------------------------------------------------- 3. OpenCode
 if [ "${SKIP_OPENCODE:-0}" = "1" ]; then
     info "SKIP_OPENCODE=1: OpenCode payload left as-is"
 else
-    bash "$SCRIPT_DIR/build-opencode-payload.sh" || warn "OpenCode payload build did not produce a payload"
+    bash "$SCRIPTS_DIR/build-opencode-payload.sh" \
+        || warn "OpenCode payload build did not produce a payload (recorded as NOT_PACKAGED)"
 fi
 
 # --------------------------------------------------------------- 4. manifest
 info "regenerating the packaged runtime manifest"
-python3 "$SCRIPT_DIR/generate-runtime-manifest.py" || die "manifest generation failed"
+python3 "$SCRIPTS_DIR/generate-runtime-manifest.py" || fail "manifest generation failed"
 
 # ------------------------------------------------------------------ 5. verify
-bash "$SCRIPT_DIR/verify-runtime.sh" || die "runtime verification failed"
+bash "$SCRIPTS_DIR/verify-runtime.sh" || fail "runtime verification failed: a runtime the build claims to embed is not really there"
 
+summary success
 info "runtime payload build finished"

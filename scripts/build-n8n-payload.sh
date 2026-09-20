@@ -70,6 +70,8 @@ export npm_config_loglevel=warn
 # `sqlite3` (node-sqlite3, a dependency of n8n) is what n8n uses for DB_TYPE=sqlite;
 # it has no prebuilt Android binary, so it must be cross-compiled here.
 NATIVE_REQUIRED=(sqlite3)
+# node-gyp keeps a verbose log; the path in it is useful when the npm output is terse.
+export npm_config_loglevel="${npm_config_loglevel:-warn}"
 NATIVE_FOUND=()
 mapfile -t NATIVE_FOUND < <(
     find "$STAGE/node_modules" -maxdepth 5 -name binding.gyp -printf '%h\n' 2>/dev/null \
@@ -90,6 +92,9 @@ if [ ${#NATIVE_FOUND[@]} -gt 0 ]; then
                 warn "$MODULE rebuilt but produced no .node binary"
             fi
         else
+            # The module log is the only place node-gyp's failure reason appears;
+            # publish its tail so the reason survives into the run annotations.
+            annotate_log_tail "n8n native $MODULE" "$LOG_DIR/n8n-native-$MODULE.log" 8
             if printf '%s\n' "${NATIVE_REQUIRED[@]}" | grep -qx "$MODULE"; then
                 die "required native module '$MODULE' failed to cross-compile for $ABI; refusing to ship an n8n payload that cannot open its database"
             fi
