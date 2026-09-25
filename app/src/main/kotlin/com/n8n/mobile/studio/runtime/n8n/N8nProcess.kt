@@ -48,7 +48,7 @@ class N8nProcess(private val ctx:Context){
             pb.redirectErrorStream(true)
             pb.redirectOutput(File(n8nDir, "n8n.log"))
             proc = pb.start()
-            Logger.d("n8n started pid ${proc?.pid()}")
+            Logger.d("n8n started pid $pid")
             Result.success(Unit)
         } catch (e: Exception) {
             Logger.e("N8nProcess start fail", e)

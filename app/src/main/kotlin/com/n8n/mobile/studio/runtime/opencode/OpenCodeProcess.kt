@@ -42,7 +42,7 @@ http.createServer((req,res)=>{
                 val e2=pb2.environment(); e2.putAll(node.env()); e2["PORT"]=AppConfig.OPENCODE_PORT.toString(); e2["OPENCODE_PROJECT_ROOT"]=paths.base.absolutePath
                 pb2.redirectErrorStream(true)
                 proc=pb2.start()
-                Logger.d("opencode stub started pid ${proc?.pid()}")
+                Logger.d("opencode stub started pid $pid")
                 return Result.success(Unit)
             }
             bin.setExecutable(true)
@@ -51,7 +51,7 @@ http.createServer((req,res)=>{
             val e=pb.environment(); e.putAll(node.env()); e["PORT"]=AppConfig.OPENCODE_PORT.toString()
             pb.redirectErrorStream(true)
             proc=pb.start()
-            Logger.d("opencode started pid ${proc?.pid()}")
+            Logger.d("opencode started pid $pid")
             Result.success(Unit)
         }catch(e:Exception){ Logger.e("opencode start fail",e); Result.failure(e)}
     }
