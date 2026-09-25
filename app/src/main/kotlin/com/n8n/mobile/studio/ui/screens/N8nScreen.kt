@@ -45,7 +45,23 @@ fun N8nScreen(nav:NavController){
     Column(modifier=Modifier.fillMaxSize().background(Color(0xFF0F172A)).padding(12.dp), verticalArrangement=Arrangement.spacedBy(8.dp)){
         RuntimeStatus("n8n", state, AppConfig.N8N_PORT, url)
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp), modifier=Modifier.fillMaxWidth()){
-            BrutalistButton("Start", onClick={ scope.launch{ loading=true; msg="Installing..."; val r=mgr.startN8n(); msg=if(r.isSuccess)"Running":"Error: ${r.exceptionOrNull()?.message}"; loading=false }}, modifier=Modifier.weight(1f))
+            BrutalistButton(
+                "Start",
+                onClick = {
+                    scope.launch {
+                        loading = true
+                        msg = "Installing..."
+                        val r = mgr.startN8n()
+                        msg = if (r.isSuccess) {
+                            "Running"
+                        } else {
+                            "Error: ${r.exceptionOrNull()?.message}"
+                        }
+                        loading = false
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            )
             BrutalistButton("Stop", onClick={ scope.launch{ mgr.stopN8n(); msg="Stopped"}}, modifier=Modifier.weight(1f), primary=false)
             BrutalistButton("Restart", onClick={ scope.launch{ mgr.restartN8n()}}, modifier=Modifier.weight(1f), primary=false)
         }
