@@ -7,7 +7,14 @@ import java.io.File
 class N8nProcess(private val ctx:Context){
     private var proc:Process?=null
     val isRunning get()=proc?.isAlive==true
-    val pid get()=try{ proc?.pid()?.toInt()}catch(_:Exception){null}
+    // Process.pid() is Java 9+, but Android's java.lang.Process API does
+    // not expose it on all supported API levels. Resolve it reflectively so
+    // the same source compiles and runs across Android versions.
+    val pid: Int?
+        get() = runCatching {
+            val process = proc ?: return@runCatching null
+            process.javaClass.methods.firstOrNull { it.name == "pid" && it.parameterCount == 0 }?.invoke(process) as? Int
+        }.getOrNull()
     fun start(extraEnv: Map<String, String> = emptyMap()): Result<Unit> {
         return try {
             val paths = RuntimePaths(ctx)

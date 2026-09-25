@@ -6,7 +6,7 @@ class N8nGuiController(ctx:Context){
     private val c = N8nController(ctx)
     val state:StateFlow<RuntimeState> = c.state
     suspend fun start()=c.start()
-    fun stop()=c.stop()
+    suspend fun stop()=c.stop()
     fun isRunning()=c.isRunning()
     fun webUrl()=c.url()
 }

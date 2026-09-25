@@ -8,7 +8,12 @@ import java.io.File
 class OpenCodeProcess(private val ctx:Context){
     private var proc:Process?=null
     val isRunning get()=proc?.isAlive==true
-    val pid get()=try{ proc?.pid()?.toInt()}catch(_:Exception){null}
+    // Process.pid() is not available on every Android API level.
+    val pid: Int?
+        get() = runCatching {
+            val process = proc ?: return@runCatching null
+            process.javaClass.methods.firstOrNull { it.name == "pid" && it.parameterCount == 0 }?.invoke(process) as? Int
+        }.getOrNull()
     fun start():Result<Unit>{
         return try{
             val paths=RuntimePaths(ctx)
