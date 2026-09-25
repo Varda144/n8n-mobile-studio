@@ -41,8 +41,8 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x gradlew
-          ./gradlew --version
-          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+          gradle --version
+          gradle :app:assembleDebug --no-daemon --stacktrace
 
       - name: Verify APK
         shell: bash
